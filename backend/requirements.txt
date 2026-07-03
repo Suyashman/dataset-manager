@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+python-multipart
+pyyaml
+pillow
+python-dotenv
+pytest
+httpx
+ultralytics

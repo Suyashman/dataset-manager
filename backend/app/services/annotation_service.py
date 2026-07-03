@@ -1,0 +1,112 @@
+import time
+from pathlib import Path
+
+from app.config import PAD_WIDTH
+from app.services import metadata_service, yolo_service
+from app.services.logging_service import log_event
+from app.utils.errors import AppError, DuplicateDatasetNameError
+from app.utils.file_ops import copy_file_safe, iter_image_files
+from app.utils.numbering import zero_pad
+from app.utils.yaml_io import load_data_yaml, save_data_yaml
+
+_COPY_RETRY_ATTEMPTS = 3
+_COPY_RETRY_DELAY_SECONDS = 0.2
+
+
+def _copy_with_retry(src: Path, dst: Path) -> None:
+    last_error: Exception | None = None
+    for attempt in range(_COPY_RETRY_ATTEMPTS):
+        try:
+            copy_file_safe(src, dst)
+            return
+        except OSError as e:
+            last_error = e
+            if attempt < _COPY_RETRY_ATTEMPTS - 1:
+                time.sleep(_COPY_RETRY_DELAY_SECONDS)
+    raise last_error
+
+
+def create_empty_dataset(name: str) -> None:
+    path = yolo_service.dataset_path(name)
+    if path.exists():
+        raise DuplicateDatasetNameError(f"Dataset '{name}' already exists")
+    yolo_service.ensure_dataset_structure(name)
+    save_data_yaml(yolo_service.get_data_yaml_path(name), {})
+    metadata_service.record_history_event(name, {"event": "created_empty"})
+    from app.services import dataset_service
+    dataset_service.refresh_cached_summary(name)
+    log_event("dataset_created", f"Created empty dataset '{name}' for manual annotation", dataset=name)
+
+
+def import_folder(dataset: str, folder_path: str, split: str, prefix: str) -> dict:
+    src = Path(folder_path)
+    if not src.exists() or not src.is_dir():
+        raise AppError(f"Folder not found or not a directory: {folder_path}")
+
+    yolo_service.ensure_dataset_structure(dataset)
+    dest_path = yolo_service.dataset_path(dataset)
+    images = list(iter_image_files(src))
+    if not images:
+        raise AppError(f"No supported image files found in {folder_path}")
+
+    added = 0
+    errors = []
+    for img in images:
+        try:
+            number = metadata_service.get_next_number(dataset, prefix, PAD_WIDTH)
+            new_name = f"{prefix}{zero_pad(number)}{img.suffix.lower()}"
+            dest = dest_path / split / "images" / new_name
+            _copy_with_retry(img, dest)
+            added += 1
+        except Exception as e:
+            errors.append({"file": img.name, "reason": str(e)})
+
+    metadata_service.update_split_counts(dataset, {split: added})
+    from app.services import dataset_service
+    dataset_service.refresh_cached_summary(dataset)
+    metadata_service.record_history_event(dataset, {
+        "event": "images_imported",
+        "source_folder": folder_path,
+        "prefix": prefix,
+        "images_added": added,
+        "images_skipped": len(errors),
+        "splits": {split: added},
+        "errors": errors[:50] if errors else None,
+    })
+    log_event("images_imported", f"Imported {added} image(s) from '{folder_path}' into '{dataset}'", dataset=dataset, count=added)
+
+    return {"images_added": added, "images_skipped": len(errors), "errors": errors}
+
+
+def add_class(dataset: str, name: str) -> int:
+    name = name.strip()
+    if not name:
+        raise AppError("Class name cannot be empty")
+    path = yolo_service.get_data_yaml_path(dataset)
+    data = load_data_yaml(path)
+    classes = data["classes"]
+    for cid, cname in classes.items():
+        if cname == name:
+            return cid
+    new_id = (max(classes.keys()) + 1) if classes else 0
+    classes[new_id] = name
+    save_data_yaml(path, classes)
+    metadata_service.update_class_mapping(dataset, classes, {"event": "manual_add_class", "class": name})
+    from app.services import dataset_service
+    dataset_service.refresh_cached_summary(dataset)
+    return new_id
+
+
+def save_boxes(dataset: str, split: str, filename: str, boxes: list[dict]) -> None:
+    path = yolo_service.dataset_path(dataset)
+    stem = filename.rsplit(".", 1)[0]
+    label_path = path / split / "labels" / f"{stem}.txt"
+    lines = [
+        f"{b['class_id']} {b['x_center']:.6f} {b['y_center']:.6f} {b['width']:.6f} {b['height']:.6f}"
+        for b in boxes
+    ]
+    label_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(label_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+        if lines:
+            f.write("\n")
