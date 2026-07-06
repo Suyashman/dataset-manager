@@ -121,7 +121,12 @@ def run_video_inference(job_id: str, model, video_path, device: str, conf: float
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 0
 
-    writer = cv2.VideoWriter(str(out_path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
+    # avc1 (H.264) plays directly in browsers; mp4v does not (Chrome's <video> can't decode it),
+    # so a video would "complete" but never actually show anything. Fall back to mp4v only if
+    # the current OpenCV/codec install can't produce avc1.
+    writer = cv2.VideoWriter(str(out_path), cv2.VideoWriter_fourcc(*"avc1"), fps, (width, height))
+    if not writer.isOpened():
+        writer = cv2.VideoWriter(str(out_path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
 
     frame_idx = 0
     processed = 0

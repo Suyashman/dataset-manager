@@ -6,14 +6,11 @@ import { inferWebcamFrame } from "@/api/inference";
 import { classColor, yoloToPixelBoxes } from "@/lib/yoloMath";
 import type { DetectionBox, InferenceParams, SpeedInfo } from "@/types/inference";
 
-const CAPTURE_INTERVAL_MS = 300;
-
 export function WebcamInference({ params, disabled }: { params: InferenceParams; disabled: boolean }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const captureRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const inFlightRef = useRef(false);
 
   const [running, setRunning] = useState(false);
   const [boxes, setBoxes] = useState<DetectionBox[]>([]);
@@ -45,11 +42,19 @@ export function WebcamInference({ params, disabled }: { params: InferenceParams;
 
   useEffect(() => {
     if (!running) return;
-    const interval = window.setInterval(() => {
-      if (inFlightRef.current) return;
+    let cancelled = false;
+    let timeoutId = 0;
+
+    // Fires the next capture the instant the previous round-trip finishes, instead of waiting
+    // out a fixed interval — so the overlay updates as fast as the model/network actually allow.
+    const tick = () => {
+      if (cancelled) return;
       const video = videoRef.current;
       const capture = captureRef.current;
-      if (!video || !capture || video.videoWidth === 0) return;
+      if (!video || !capture || video.videoWidth === 0) {
+        timeoutId = window.setTimeout(tick, 50);
+        return;
+      }
 
       capture.width = video.videoWidth;
       capture.height = video.videoHeight;
@@ -58,23 +63,32 @@ export function WebcamInference({ params, disabled }: { params: InferenceParams;
 
       capture.toBlob(
         async (blob) => {
-          if (!blob) return;
-          inFlightRef.current = true;
+          if (!blob) {
+            if (!cancelled) timeoutId = window.setTimeout(tick, 0);
+            return;
+          }
           try {
             const res = await inferWebcamFrame(blob, params);
-            setBoxes(res.boxes);
-            setSpeed(res.speed);
+            if (!cancelled) {
+              setBoxes(res.boxes);
+              setSpeed(res.speed);
+            }
           } catch {
             // Transient errors (model still loading, brief network hiccup) shouldn't stop the loop.
           } finally {
-            inFlightRef.current = false;
+            if (!cancelled) timeoutId = window.setTimeout(tick, 0);
           }
         },
         "image/jpeg",
         0.85
       );
-    }, CAPTURE_INTERVAL_MS);
-    return () => window.clearInterval(interval);
+    };
+
+    tick();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
   }, [running, params]);
 
   useEffect(() => {

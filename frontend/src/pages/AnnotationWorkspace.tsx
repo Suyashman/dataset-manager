@@ -29,6 +29,10 @@ export function AnnotationWorkspace() {
 
   const classes: Record<number, string> = {};
   if (detail) for (const [k, v] of Object.entries(detail.classes)) classes[Number(k)] = v;
+  const sortedClassIds = Object.keys(classes).map(Number).sort((a, b) => a - b);
+
+  const [classColors, setClassColors] = useState<Record<number, string>>({});
+  const getClassColor = (id: number) => classColors[id] ?? classColor(id);
 
   const images = imageList?.items ?? [];
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -115,12 +119,17 @@ export function AnnotationWorkspace() {
         goTo(currentIndex + 1);
       } else if (e.key === "ArrowLeft") {
         goTo(currentIndex - 1);
+      } else if (/^[1-9]$/.test(e.key)) {
+        // Only sets which class the *next* box you draw uses — deliberately does not reassign
+        // the currently selected box, unlike clicking a class in the sidebar.
+        const id = sortedClassIds[Number(e.key) - 1];
+        if (id !== undefined) setPendingClassId(id);
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, currentIndex, images.length]);
+  }, [selectedId, currentIndex, images.length, sortedClassIds.join(",")]);
 
   const goTo = (i: number) => {
     if (i < 0 || i >= images.length) return;
@@ -183,20 +192,29 @@ export function AnnotationWorkspace() {
           <div className="space-y-3">
             <Label className="text-xs">Classes</Label>
             <div className="space-y-1">
-              {Object.entries(classes).map(([id, cname]) => (
-                <button
+              {sortedClassIds.map((id, i) => (
+                <div
                   key={id}
-                  onClick={() => assignClass(Number(id))}
                   className={cn(
-                    "flex items-center gap-2 w-full text-left px-2 py-1.5 rounded-md text-sm border",
-                    pendingClassId === Number(id) ? "border-foreground" : "border-transparent hover:bg-accent/50"
+                    "flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-sm border",
+                    pendingClassId === id ? "border-foreground" : "border-transparent hover:bg-accent/50"
                   )}
                 >
-                  <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: classColor(Number(id)) }} />
-                  <span className="truncate">{cname}</span>
-                </button>
+                  <input
+                    type="color"
+                    value={getClassColor(id)}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => setClassColors((prev) => ({ ...prev, [id]: e.target.value }))}
+                    className="h-4 w-4 shrink-0 rounded-full border-0 bg-transparent p-0 cursor-pointer"
+                    title="Change this class's color"
+                  />
+                  <button onClick={() => assignClass(id)} className="flex-1 text-left truncate">
+                    <span className="text-muted-foreground text-xs mr-1">{i < 9 ? i + 1 : ""}</span>
+                    {classes[id]}
+                  </button>
+                </div>
               ))}
-              {Object.keys(classes).length === 0 && (
+              {sortedClassIds.length === 0 && (
                 <p className="text-xs text-muted-foreground">Add a class below to start labeling.</p>
               )}
             </div>
@@ -236,6 +254,7 @@ export function AnnotationWorkspace() {
                 imageUrl={getImageUrl(name, currentImage.split, currentImage.filename)}
                 boxes={boxes}
                 classNames={classes}
+                classColors={classColors}
                 selectedId={selectedId}
                 onSelect={setSelectedId}
                 onBoxesChange={setBoxes}
@@ -260,7 +279,7 @@ export function AnnotationWorkspace() {
                   )}
                 >
                   <span className="flex items-center gap-2">
-                    <span className="h-2.5 w-2.5 rounded-full" style={{ background: classColor(b.class_id) }} />
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ background: getClassColor(b.class_id) }} />
                     {classes[b.class_id] ?? `class_${b.class_id}`}
                   </span>
                   <Button

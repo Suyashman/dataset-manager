@@ -14,6 +14,7 @@ interface AnnotationCanvasProps {
   imageUrl: string;
   boxes: EditableBox[];
   classNames: Record<number, string>;
+  classColors: Record<number, string>;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   onBoxesChange: (boxes: EditableBox[]) => void;
@@ -42,6 +43,7 @@ export function AnnotationCanvas({
   imageUrl,
   boxes,
   classNames,
+  classColors,
   selectedId,
   onSelect,
   onBoxesChange,
@@ -93,7 +95,7 @@ export function AnnotationCanvas({
 
     for (const b of boxes) {
       const p = toPixel(b);
-      const color = classColor(b.class_id);
+      const color = classColors[b.class_id] ?? classColor(b.class_id);
       const isSelected = b.id === selectedId;
       ctx.strokeStyle = color;
       ctx.lineWidth = isSelected ? 3 : 2;
@@ -125,7 +127,7 @@ export function AnnotationCanvas({
   };
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(draw, [boxes, selectedId, naturalSize]);
+  useEffect(draw, [boxes, selectedId, naturalSize, classColors]);
 
   useEffect(() => {
     const observer = new ResizeObserver(draw);
@@ -278,7 +280,7 @@ export function AnnotationCanvas({
         ref={imgRef}
         src={imageUrl}
         alt="annotate"
-        className="max-w-full h-auto block"
+        className="max-w-full max-h-[70vh] w-auto h-auto block"
         draggable={false}
         onLoad={(e) => setNaturalSize({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
       />

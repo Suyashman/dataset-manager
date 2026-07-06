@@ -20,7 +20,21 @@ export function yoloToPixelBoxes(boxes: LabelBox[], imgWidth: number, imgHeight:
   }));
 }
 
+// Hex (not hsl()) so the same string can feed a native <input type="color"> picker directly.
+function hslToHex(h: number, s: number, l: number): string {
+  s /= 100;
+  l /= 100;
+  const k = (n: number) => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n: number) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  const toHex = (n: number) =>
+    Math.round(f(n) * 255)
+      .toString(16)
+      .padStart(2, "0");
+  return `#${toHex(0)}${toHex(8)}${toHex(4)}`;
+}
+
 export function classColor(classId: number): string {
   const hue = (classId * 137.508) % 360; // golden-angle distribution for distinct hues
-  return `hsl(${hue}, 80%, 55%)`;
+  return hslToHex(hue, 80, 55);
 }
