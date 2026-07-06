@@ -52,8 +52,8 @@ async def infer_image(
     run_name: str = Form(...),
     weights: str = Form("best"),
     device: str = Form("cpu"),
-    conf: float = Form(0.25),
-    iou: float = Form(0.45),
+    conf: float = Form(0.25, ge=0.0, le=1.0),
+    iou: float = Form(0.45, ge=0.0, le=1.0),
 ):
     model = inference_service.get_model(run_name, weights, device)
     image_bytes = await image.read()
@@ -70,8 +70,8 @@ async def infer_images(
     run_name: str = Form(...),
     weights: str = Form("best"),
     device: str = Form("cpu"),
-    conf: float = Form(0.25),
-    iou: float = Form(0.45),
+    conf: float = Form(0.25, ge=0.0, le=1.0),
+    iou: float = Form(0.45, ge=0.0, le=1.0),
 ):
     if len(images) > _MAX_BATCH_IMAGES:
         raise AppError(f"Pick at most {_MAX_BATCH_IMAGES} images at a time", details={"count": len(images)})
@@ -95,8 +95,8 @@ async def infer_webcam_frame(
     run_name: str = Form(...),
     weights: str = Form("best"),
     device: str = Form("cpu"),
-    conf: float = Form(0.25),
-    iou: float = Form(0.45),
+    conf: float = Form(0.25, ge=0.0, le=1.0),
+    iou: float = Form(0.45, ge=0.0, le=1.0),
 ):
     model = inference_service.get_model(run_name, weights, device)
     frame_bytes = await frame.read()
@@ -126,9 +126,9 @@ async def infer_video(
     run_name: str = Form(...),
     weights: str = Form("best"),
     device: str = Form("cpu"),
-    conf: float = Form(0.25),
-    iou: float = Form(0.45),
-    frame_stride: int = Form(3),
+    conf: float = Form(0.25, ge=0.0, le=1.0),
+    iou: float = Form(0.45, ge=0.0, le=1.0),
+    frame_stride: int = Form(3, ge=1),
 ):
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
     video_path = UPLOADS_DIR / f"{uuid.uuid4().hex}_{video.filename or 'video.mp4'}"

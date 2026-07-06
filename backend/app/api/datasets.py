@@ -1,6 +1,6 @@
 from fastapi import APIRouter, BackgroundTasks
 
-from app.schemas.dataset import CreateDatasetRequest, DatasetDetail, DatasetSummary, MergeDatasetRequest, MergeMultiRequest
+from app.schemas.dataset import CreateDatasetRequest, DatasetDetail, DatasetSummary, MergeDatasetRequest, MergeMultiRequest, ResplitRequest
 from app.services import dataset_service, job_service, merge_service
 from app.services.logging_service import log_event
 
@@ -110,6 +110,11 @@ async def list_dataset_names():
 @router.get("/{name}", response_model=DatasetDetail)
 async def get_dataset(name: str):
     return dataset_service.get_dataset_detail(name)
+
+
+@router.post("/{name}/resplit")
+async def resplit_dataset(name: str, req: ResplitRequest):
+    return dataset_service.resplit_dataset(name, req.train, req.valid, req.test)
 
 
 @router.delete("/{name}")

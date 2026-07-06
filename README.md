@@ -68,6 +68,12 @@ npm run dev -- --host
 
 Open http://localhost:5173 — the Vite dev server proxies `/api` to `http://localhost:8000`.
 
+### Everyday use: one-click start
+
+Once the one-time setup above is done, double-click **`start.bat`** in the project root instead
+of typing both commands by hand. It opens two console windows (backend and frontend) and opens
+your browser to the app once both are up. Close both console windows to stop the app.
+
 If you're using Claude Code with this repo, `.claude/launch.json` has both servers pre-configured
 — but the backend entry's `runtimeExecutable` is an absolute path to *this machine's* venv, so
 update it to your own venv location on a new machine.

@@ -1,13 +1,13 @@
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 AugTechniqueType = Literal["flip", "rotate", "hsv", "blur", "noise"]
 
 
 class AugTechniqueConfig(BaseModel):
     type: AugTechniqueType
-    copies: int = 1
+    copies: int = Field(1, gt=0, le=20)
     angle_range: tuple[float, float] = (-15, 15)
     hsv_h: float = 0.015
     hsv_s: float = 0.7

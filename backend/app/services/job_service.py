@@ -5,14 +5,30 @@ from typing import Callable
 from app.schemas.job import JobProgress, JobStatus
 from app.utils.errors import JobNotFoundError
 
+# Jobs are only ever added, never removed, for the lifetime of the process. Training jobs in
+# particular accumulate a per-epoch `metrics` list, so an unbounded store is a real memory leak
+# on a long-running server. Cap it and evict oldest-first, skipping anything still in progress.
+_MAX_JOBS = 200
+
 _jobs: dict[str, JobStatus] = {}
 _guard = threading.Lock()
+
+
+def _evict_old_jobs() -> None:
+    if len(_jobs) <= _MAX_JOBS:
+        return
+    for job_id, job in list(_jobs.items()):
+        if len(_jobs) <= _MAX_JOBS:
+            break
+        if job.status in ("completed", "failed"):
+            del _jobs[job_id]
 
 
 def create_job() -> str:
     job_id = uuid.uuid4().hex
     with _guard:
         _jobs[job_id] = JobStatus(job_id=job_id, status="pending")
+        _evict_old_jobs()
     return job_id
 
 

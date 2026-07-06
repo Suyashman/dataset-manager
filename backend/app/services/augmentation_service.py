@@ -1,6 +1,6 @@
 import shutil
 
-from app.config import DATASETS_DIR, PAD_WIDTH
+from app.config import PAD_WIDTH
 from app.schemas.augmentation import AugTechniqueConfig
 from app.services import metadata_service, yolo_service
 from app.services.logging_service import log_event
@@ -31,7 +31,7 @@ def augment_dataset(
     augmented variants of every train-split image into destination's train split only — valid/test
     are never augmented so evaluation metrics stay honest."""
     src_path = yolo_service.validate_source_dataset(source)
-    dest_path = DATASETS_DIR / destination
+    dest_path = yolo_service.dataset_path(destination)
     if dest_path.exists():
         raise DuplicateDatasetNameError(f"Dataset '{destination}' already exists")
 

@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from app.config import DATASETS_DIR, METADATA_DIR, PAD_WIDTH
 from app.services.logging_service import log_event
 from app.utils.atomic_io import atomic_write_json, read_json
+from app.utils.file_ops import validate_safe_name
 from app.utils.numbering import parse_existing_numbers_from_filenames
 
 _locks: dict[str, threading.Lock] = {}
@@ -18,6 +19,7 @@ def _lock_for(dataset_name: str) -> threading.Lock:
 
 
 def _metadata_path(dataset_name: str):
+    validate_safe_name(dataset_name, "dataset name")
     return METADATA_DIR / f"{dataset_name}.json"
 
 
@@ -50,6 +52,7 @@ def save_metadata(dataset_name: str, data: dict) -> None:
 def get_next_number(dataset_name: str, prefix: str, pad_width: int = PAD_WIDTH) -> int:
     """Increments and persists the numbering counter for prefix. Falls back to scanning
     existing files if metadata is missing/corrupted, repairing the metadata file."""
+    validate_safe_name(prefix, "prefix")
     lock = _lock_for(dataset_name)
     with lock:
         path = _metadata_path(dataset_name)

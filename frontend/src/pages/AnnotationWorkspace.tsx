@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ChevronLeft, ChevronRight, Plus, Trash2, Upload } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Plus, Trash2, Upload } from "lucide-react";
 import { getDataset } from "@/api/datasets";
 import { listImages, getImageUrl, getLabel } from "@/api/images";
 import { addClass, importFolder, saveBoxes } from "@/api/annotation";
@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 
 export function AnnotationWorkspace() {
   const { name = "" } = useParams();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   const { data: detail } = useQuery({ queryKey: ["dataset", name], queryFn: () => getDataset(name) });
@@ -37,6 +38,7 @@ export function AnnotationWorkspace() {
     queryKey: ["label", name, currentImage?.split, currentImage?.filename],
     queryFn: () => getLabel(name, currentImage.split, currentImage.filename),
     enabled: !!currentImage,
+    retry: false,
   });
 
   const [boxes, setBoxes] = useState<EditableBox[]>([]);
@@ -126,6 +128,12 @@ export function AnnotationWorkspace() {
     setCurrentIndex(i);
   };
 
+  const handleDone = () => {
+    flushSave();
+    toast.success("Dataset created");
+    navigate("/");
+  };
+
   const handleAddClass = async () => {
     const trimmed = newClassName.trim();
     if (!trimmed) return;
@@ -212,14 +220,15 @@ export function AnnotationWorkspace() {
                 <ChevronLeft className="h-4 w-4 mr-1" /> Prev
               </Button>
               <span className="text-xs text-muted-foreground truncate max-w-[200px]">{currentImage?.filename}</span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => goTo(currentIndex + 1)}
-                disabled={currentIndex === images.length - 1}
-              >
-                Next <ChevronRight className="h-4 w-4 ml-1" />
-              </Button>
+              {currentIndex === images.length - 1 ? (
+                <Button size="sm" onClick={handleDone}>
+                  <Check className="h-4 w-4 mr-1" /> Done
+                </Button>
+              ) : (
+                <Button variant="outline" size="sm" onClick={() => goTo(currentIndex + 1)}>
+                  Next <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              )}
             </div>
 
             {currentImage && Object.keys(classes).length > 0 && (

@@ -170,10 +170,16 @@ export function InferenceStudio() {
             <div className="space-y-2">
               <Label>Confidence threshold</Label>
               <Input type="number" step={0.05} min={0} max={1} value={confStr} onChange={(e) => setConfStr(e.target.value)} />
+              <p className="text-xs text-muted-foreground">
+                Minimum confidence to keep a detection. Lower it if a model trained on few images shows nothing.
+              </p>
             </div>
             <div className="space-y-2">
               <Label>IoU threshold</Label>
               <Input type="number" step={0.05} min={0} max={1} value={iouStr} onChange={(e) => setIouStr(e.target.value)} />
+              <p className="text-xs text-muted-foreground">
+                Controls duplicate-box removal. Lower it if the same object gets boxed more than once.
+              </p>
             </div>
           </div>
         </CardContent>
@@ -204,7 +210,12 @@ export function InferenceStudio() {
                       {b.class_name} {(b.confidence * 100).toFixed(0)}%
                     </Badge>
                   ))}
-                  {singleResult.boxes.length === 0 && <span className="text-sm text-muted-foreground">No detections</span>}
+                  {singleResult.boxes.length === 0 && (
+                    <span className="text-sm text-muted-foreground">
+                      No detections above the confidence threshold. If this model was trained on very few images or
+                      epochs, try lowering the confidence threshold above.
+                    </span>
+                  )}
                 </div>
                 <p className="text-xs text-muted-foreground font-mono">
                   {singleResult.speed.total_ms.toFixed(1)}ms ({singleResult.speed.preprocess_ms.toFixed(1)} pre +{" "}

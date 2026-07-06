@@ -1,10 +1,25 @@
 import hashlib
+import re
 import shutil
 from pathlib import Path
 from typing import Iterator
 
 from app.config import IMAGE_EXTENSIONS
 from app.utils.errors import PathTraversalError
+
+# Dataset names and numbering prefixes get embedded directly into filesystem paths (as a
+# directory name, or as a filename prefix like "H000001.jpg"). Without this check, a value like
+# "../../etc" or containing a backslash would let a request escape DATASETS_DIR/METADATA_DIR
+# entirely — see the path-traversal finding from the QA audit. safe_path_join alone doesn't
+# catch this because it only validates *joined* segments, not a value baked into a single
+# path component before being combined with `/`.
+_SAFE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._-]*$")
+
+
+def validate_safe_name(name: str, field: str = "name") -> str:
+    if not name or ".." in name or "/" in name or "\\" in name or not _SAFE_NAME_PATTERN.match(name):
+        raise PathTraversalError(f"Invalid {field}: {name!r}")
+    return name
 
 
 def safe_path_join(base: Path, *parts: str) -> Path:

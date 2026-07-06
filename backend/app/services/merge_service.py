@@ -1,10 +1,11 @@
 import time
 from pathlib import Path
 
-from app.config import PAD_WIDTH
+from app.config import PAD_WIDTH, SPLITS
 from app.services import metadata_service, yolo_service
 from app.services.logging_service import log_event
-from app.utils.file_ops import copy_file_safe, iter_image_files
+from app.utils.errors import AppError
+from app.utils.file_ops import copy_file_safe, iter_image_files, validate_safe_name
 from app.utils.label_utils import rewrite_label_class_ids
 from app.utils.numbering import zero_pad
 from app.utils.yaml_io import load_data_yaml, save_data_yaml
@@ -77,6 +78,10 @@ def merge_dataset(
     `class_filter`, if given, keeps only the listed source class ids (optionally renamed) and
     strips every label line for any other class out of the copied label files.
     """
+    invalid_splits = [s for s in splits_to_include if s not in SPLITS]
+    if invalid_splits:
+        raise AppError(f"Invalid split(s): {invalid_splits}", details={"valid_splits": list(SPLITS)})
+    validate_safe_name(prefix, "prefix")
     src_path = yolo_service.validate_source_dataset(source)
     yolo_service.ensure_dataset_structure(destination)
     dest_path = yolo_service.dataset_path(destination)
@@ -193,6 +198,9 @@ def merge_multiple(
     `sources` is a list of {"source": str, "prefix": str, "class_filter": dict[int,str]|None}.
     Each source needs its own prefix so filenames never collide across sources.
     """
+    invalid_splits = [s for s in splits_to_include if s not in SPLITS]
+    if invalid_splits:
+        raise AppError(f"Invalid split(s): {invalid_splits}", details={"valid_splits": list(SPLITS)})
     yolo_service.ensure_dataset_structure(destination)
 
     # Precompute total work across every source up front so progress reporting is one smooth

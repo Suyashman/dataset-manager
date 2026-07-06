@@ -3,35 +3,58 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { listDatasetNames } from "@/api/datasets";
-import { createEmptyDataset } from "@/api/annotation";
+import { createEmptyDataset, createFromReference } from "@/api/annotation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
+type Choice = "continue" | "fork" | null;
+
 export function AnnotateSetup() {
   const navigate = useNavigate();
   const { data: datasetNames } = useQuery({ queryKey: ["dataset-names"], queryFn: listDatasetNames });
   const [name, setName] = useState("");
+  const [choice, setChoice] = useState<Choice>(null);
+  const [forkName, setForkName] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const isExisting = !!name.trim() && (datasetNames ?? []).includes(name.trim());
+  const trimmed = name.trim();
+  const isExisting = !!trimmed && (datasetNames ?? []).includes(trimmed);
 
-  const handleContinue = async () => {
-    const trimmed = name.trim();
+  const handleContinueNew = async () => {
     if (!trimmed) {
       toast.error("Give the dataset a name");
       return;
     }
     setSubmitting(true);
     try {
-      if (!isExisting) {
-        await createEmptyDataset(trimmed);
-      }
+      await createEmptyDataset(trimmed);
       navigate(`/annotate/${encodeURIComponent(trimmed)}`);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to open dataset");
+      toast.error(e instanceof Error ? e.message : "Failed to create dataset");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleContinueExisting = () => {
+    navigate(`/annotate/${encodeURIComponent(trimmed)}`);
+  };
+
+  const handleFork = async () => {
+    const newName = forkName.trim();
+    if (!newName) {
+      toast.error("Give the new dataset a name");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await createFromReference(trimmed, newName);
+      navigate(`/annotate/${encodeURIComponent(newName)}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to create dataset");
     } finally {
       setSubmitting(false);
     }
@@ -53,22 +76,67 @@ export function AnnotateSetup() {
           <div className="space-y-2">
             <Label>Dataset name</Label>
             <div className="flex items-center gap-2">
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="pothole_detection" />
-              {name.trim() && (
+              <Input
+                value={name}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  setChoice(null);
+                }}
+                placeholder="pothole_detection"
+              />
+              {trimmed && (
                 <Badge variant={isExisting ? "secondary" : "outline"} className="shrink-0">
                   {isExisting ? "existing dataset" : "will be created"}
                 </Badge>
               )}
             </div>
-            <p className="text-xs text-muted-foreground">
-              You'll import images and open the annotation workspace next. Adding more images later, or continuing
-              on unfinished images, both work on an existing dataset.
-            </p>
           </div>
 
-          <Button className="w-full" onClick={handleContinue} disabled={submitting}>
-            Continue to Workspace
-          </Button>
+          {!isExisting && (
+            <>
+              <p className="text-xs text-muted-foreground">
+                A new empty dataset will be created and you'll import images and start labeling next.
+              </p>
+              <Button className="w-full" onClick={handleContinueNew} disabled={submitting || !trimmed}>
+                Continue to Workspace
+              </Button>
+            </>
+          )}
+
+          {isExisting && choice === null && (
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">
+                '{trimmed}' already exists. Add more images directly into it, or start a separate dataset that
+                begins from its class list without touching it.
+              </p>
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1" onClick={handleContinueExisting}>
+                  Add to '{trimmed}'
+                </Button>
+                <Button className="flex-1" onClick={() => setChoice("fork")}>
+                  Create new from '{trimmed}'
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {isExisting && choice === "fork" && (
+            <div className="space-y-2">
+              <Label>New dataset name</Label>
+              <Input value={forkName} onChange={(e) => setForkName(e.target.value)} placeholder={`${trimmed}_v2`} />
+              <p className="text-xs text-muted-foreground">
+                Starts empty with the same classes as '{trimmed}' — '{trimmed}' itself is left untouched.
+              </p>
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1" onClick={() => setChoice(null)} disabled={submitting}>
+                  Back
+                </Button>
+                <Button className="flex-1" onClick={handleFork} disabled={submitting || !forkName.trim()}>
+                  Create & Continue
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

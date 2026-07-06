@@ -59,3 +59,14 @@ export interface MergeMultiRequest {
   sources: MergeSourceEntry[];
   splits_to_include: string[];
 }
+
+export interface ResplitRequest {
+  train: number;
+  valid: number;
+  test: number;
+}
+
+export interface ResplitResponse {
+  splits: Record<string, number>;
+  total_images: number;
+}

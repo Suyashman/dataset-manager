@@ -1,15 +1,15 @@
-from pathlib import Path
 
 from app.config import SPLITS
 from app.services import yolo_service
+from app.utils.errors import DatasetNotFoundError
 from app.utils.file_ops import compute_file_hash, iter_image_files
 from app.utils.image_utils import is_image_corrupted
-from app.utils.label_utils import parse_label_file
-from app.utils.yaml_io import load_data_yaml
 
 
 def _build_context(dataset_name: str) -> dict:
     path = yolo_service.dataset_path(dataset_name)
+    if not path.exists():
+        raise DatasetNotFoundError(f"Dataset '{dataset_name}' not found")
     classes = yolo_service.get_classes(dataset_name)
     split_files = {}
     for split in SPLITS:
@@ -62,7 +62,7 @@ def _check_duplicate_images_by_hash(ctx) -> list[dict]:
                 continue
             hash_map.setdefault(h, []).append(f"{split}/{img.name}")
     issues = []
-    for h, paths in hash_map.items():
+    for paths in hash_map.values():
         if len(paths) > 1:
             issues.append({"check": "duplicate_images", "severity": "warning", "message": f"{len(paths)} identical images found", "details": {"files": paths}})
     return issues

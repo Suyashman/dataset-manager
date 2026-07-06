@@ -4,6 +4,9 @@ import type { Box, ImportFolderRequest, ImportFolderResponse } from "@/types/ann
 export const createEmptyDataset = (name: string) =>
   api.post<{ created: boolean; name: string }>("/annotation/create-empty", { name });
 
+export const createFromReference = (source: string, destination: string) =>
+  api.post<{ created: boolean; name: string }>("/annotation/create-from-reference", { source, destination });
+
 export const importFolder = (dataset: string, req: ImportFolderRequest) =>
   api.post<ImportFolderResponse>(`/annotation/${encodeURIComponent(dataset)}/import-folder`, req);
 

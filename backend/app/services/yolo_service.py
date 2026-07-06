@@ -2,11 +2,12 @@ from pathlib import Path
 
 from app.config import DATASETS_DIR, SPLITS
 from app.utils.errors import InvalidYoloStructureError
-from app.utils.file_ops import iter_image_files
+from app.utils.file_ops import iter_image_files, validate_safe_name
 from app.utils.yaml_io import load_data_yaml
 
 
 def dataset_path(name: str) -> Path:
+    validate_safe_name(name, "dataset name")
     return DATASETS_DIR / name
 
 

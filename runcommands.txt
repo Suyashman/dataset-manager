@@ -1,0 +1,7 @@
+Terminal 1 
+cd C:\Users\2suya\Documents\Sparkline\datasetmanager\backend
+.\venv\Scripts\python.exe -m uvicorn app.main:app --port 8000
+
+Terminal 2 
+cd C:\Users\2suya\Documents\Sparkline\datasetmanager\frontend
+npm run dev

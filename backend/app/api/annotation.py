@@ -4,6 +4,7 @@ from app.schemas.annotation import (
     AddClassRequest,
     AddClassResponse,
     CreateEmptyDatasetRequest,
+    CreateFromReferenceRequest,
     ImportFolderRequest,
     ImportFolderResponse,
     SaveBoxesRequest,
@@ -17,6 +18,12 @@ router = APIRouter()
 async def create_empty_dataset(req: CreateEmptyDatasetRequest):
     annotation_service.create_empty_dataset(req.name)
     return {"created": True, "name": req.name}
+
+
+@router.post("/create-from-reference")
+async def create_from_reference(req: CreateFromReferenceRequest):
+    annotation_service.create_from_reference(req.source, req.destination)
+    return {"created": True, "name": req.destination}
 
 
 @router.post("/{dataset}/import-folder", response_model=ImportFolderResponse)

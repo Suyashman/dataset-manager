@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class CreateDatasetRequest(BaseModel):
@@ -30,6 +30,12 @@ class MergeMultiRequest(BaseModel):
     destination: str
     sources: list[MergeSourceEntry]
     splits_to_include: list[str] = ["train", "valid", "test"]
+
+
+class ResplitRequest(BaseModel):
+    train: float = Field(0.8, ge=0, le=1)
+    valid: float = Field(0.2, ge=0, le=1)
+    test: float = Field(0.0, ge=0, le=1)
 
 
 class DatasetSummary(BaseModel):

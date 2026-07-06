@@ -1,11 +1,14 @@
 from app.config import SPLITS
 from app.services import validation_service, yolo_service
+from app.utils.errors import DatasetNotFoundError
 from app.utils.file_ops import iter_image_files
 from app.utils.label_utils import parse_label_file
 
 
 def compute_stats(dataset_name: str) -> dict:
     path = yolo_service.dataset_path(dataset_name)
+    if not path.exists():
+        raise DatasetNotFoundError(f"Dataset '{dataset_name}' not found")
     classes = yolo_service.get_classes(dataset_name)
     splits = {}
     total_images = 0

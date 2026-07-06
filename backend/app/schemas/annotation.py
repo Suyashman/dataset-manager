@@ -5,6 +5,11 @@ class CreateEmptyDatasetRequest(BaseModel):
     name: str
 
 
+class CreateFromReferenceRequest(BaseModel):
+    source: str
+    destination: str
+
+
 class ImportFolderRequest(BaseModel):
     folder_path: str
     split: str = "train"

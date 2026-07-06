@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Cpu, Square, Zap } from "lucide-react";
-import { listDatasetNames } from "@/api/datasets";
+import { listDatasets } from "@/api/datasets";
 import { getDeviceInfo, listRuns, startTraining, stopTraining } from "@/api/training";
 import { MODEL_VARIANTS } from "@/types/training";
 import { useJobPolling } from "@/hooks/useJobPolling";
@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { MetricsChart } from "@/components/MetricsChart";
+import { cn } from "@/lib/utils";
 
 // Keeps the field free-typed while editing (so clearing it and typing "10" doesn't first
 // render "0" then "010"), and strips leading zeros without blocking an in-progress "0".
@@ -22,7 +23,7 @@ const stripLeadingZeros = (v: string) => v.replace(/[^\d]/g, "").replace(/^0+(?=
 const stripLeadingZerosDecimal = (v: string) => v.replace(/[^\d.]/g, "").replace(/^0+(?=\d)/, "");
 
 export function TrainModel() {
-  const { data: datasetNames } = useQuery({ queryKey: ["dataset-names"], queryFn: listDatasetNames });
+  const { data: datasets } = useQuery({ queryKey: ["datasets"], queryFn: listDatasets });
   const { data: deviceInfo } = useQuery({ queryKey: ["device-info"], queryFn: getDeviceInfo });
   const { data: runs } = useQuery({ queryKey: ["training-runs"], queryFn: listRuns });
 
@@ -43,6 +44,9 @@ export function TrainModel() {
   const job = useJobPolling(jobId);
   const isTraining = job?.status === "running" || job?.status === "pending";
   const selectedRun = runs?.find((r) => r.run_name === resumeRun);
+  const selectedDataset = datasets?.find((d) => d.name === dataset);
+  const batch = parseInt(batchStr, 10) || 1;
+  const batchExceedsDataset = !!selectedDataset && batch > selectedDataset.total_images;
 
   const handleSubmit = async () => {
     if (!dataset) {
@@ -50,7 +54,6 @@ export function TrainModel() {
       return;
     }
     const epochs = parseInt(epochsStr, 10) || 1;
-    const batch = parseInt(batchStr, 10) || 1;
     const imgsz = parseInt(imgszStr, 10) || 640;
     const lr0 = parseFloat(lr0Str) || 0.01;
     const patience = parseInt(patienceStr, 10) || 100;
@@ -108,13 +111,14 @@ export function TrainModel() {
                 <SelectValue placeholder="Choose dataset" />
               </SelectTrigger>
               <SelectContent>
-                {(datasetNames ?? []).map((name) => (
-                  <SelectItem key={name} value={name}>
-                    {name}
+                {(datasets ?? []).map((d) => (
+                  <SelectItem key={d.name} value={d.name}>
+                    {d.name} ({d.total_images} images)
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            <p className="text-xs text-muted-foreground">Which dataset to train on. It needs images in at least a train split.</p>
           </div>
 
           <div className="space-y-2">
@@ -131,6 +135,9 @@ export function TrainModel() {
                 ))}
               </SelectContent>
             </Select>
+            <p className="text-xs text-muted-foreground">
+              Starting weights. Smaller (n) is faster but less accurate; larger (l/x) is slower but more accurate.
+            </p>
           </div>
 
           <div className="grid grid-cols-3 gap-4">
@@ -143,6 +150,7 @@ export function TrainModel() {
                 onChange={(e) => setEpochsStr(stripLeadingZeros(e.target.value))}
                 disabled={isTraining}
               />
+              <p className="text-xs text-muted-foreground">How many full passes over the dataset. More epochs = more learning, but risk overfitting on small datasets.</p>
             </div>
             <div className="space-y-2">
               <Label>Batch size</Label>
@@ -153,6 +161,11 @@ export function TrainModel() {
                 onChange={(e) => setBatchStr(stripLeadingZeros(e.target.value))}
                 disabled={isTraining}
               />
+              <p className={cn("text-xs", batchExceedsDataset ? "text-amber-500" : "text-muted-foreground")}>
+                {batchExceedsDataset
+                  ? `Larger than this dataset's ${selectedDataset!.total_images} images — it'll automatically be capped, so training just uses all of them per batch.`
+                  : "How many images are processed together per step. Higher uses more memory but trains faster."}
+              </p>
             </div>
             <div className="space-y-2">
               <Label>Image size</Label>
@@ -163,6 +176,7 @@ export function TrainModel() {
                 onChange={(e) => setImgszStr(stripLeadingZeros(e.target.value))}
                 disabled={isTraining}
               />
+              <p className="text-xs text-muted-foreground">Pixel size images are resized to. Higher can improve accuracy on small objects but is slower.</p>
             </div>
           </div>
 
@@ -176,6 +190,7 @@ export function TrainModel() {
                 onChange={(e) => setLr0Str(stripLeadingZerosDecimal(e.target.value))}
                 disabled={isTraining || (resumeWeights === "last" && !!resumeRun)}
               />
+              <p className="text-xs text-muted-foreground">How fast the model updates its weights. Default 0.01 works for most cases — lower it if training looks unstable.</p>
             </div>
             <div className="space-y-2">
               <Label>Early stop patience{resumeWeights === "last" && resumeRun && <span className="text-muted-foreground font-normal"> (ignored — resuming)</span>}</Label>
@@ -186,6 +201,7 @@ export function TrainModel() {
                 onChange={(e) => setPatienceStr(stripLeadingZeros(e.target.value))}
                 disabled={isTraining || (resumeWeights === "last" && !!resumeRun)}
               />
+              <p className="text-xs text-muted-foreground">Stop early if validation stops improving for this many epochs. Set it near or above Epochs to disable early stopping.</p>
             </div>
           </div>
 

@@ -1,7 +1,10 @@
+import random
+import shutil
+
 from app.config import DATASETS_DIR, SPLITS
 from app.services import merge_service, metadata_service, yolo_service
 from app.services.logging_service import log_event
-from app.utils.errors import DatasetNotFoundError, DuplicateDatasetNameError
+from app.utils.errors import AppError, DatasetNotFoundError, DuplicateDatasetNameError
 from app.utils.file_ops import iter_image_files
 
 
@@ -117,6 +120,56 @@ def get_dataset_detail(name: str) -> dict:
         "size_bytes": cached["size_bytes"],
         "history": meta.get("history", []),
     }
+
+
+def resplit_dataset(name: str, train_ratio: float, valid_ratio: float, test_ratio: float) -> dict:
+    """Pools every image currently in the dataset (regardless of its current split), shuffles,
+    and redistributes across train/valid/test by the given ratios — moving both the image and
+    its label file. Re-running this reshuffles from scratch; it's not additive."""
+    total_ratio = train_ratio + valid_ratio + test_ratio
+    if abs(total_ratio - 1.0) > 0.01:
+        raise AppError(f"Split ratios must sum to 1.0 (got {total_ratio:.2f})")
+
+    path = yolo_service.dataset_path(name)
+    if not path.exists():
+        raise DatasetNotFoundError(f"Dataset '{name}' not found")
+
+    all_items = []
+    for split in SPLITS:
+        for img in iter_image_files(path / split / "images"):
+            all_items.append((split, img))
+
+    if not all_items:
+        raise AppError(f"Dataset '{name}' has no images to split")
+
+    random.shuffle(all_items)
+    total = len(all_items)
+    n_train = round(total * train_ratio)
+    n_valid = round(total * valid_ratio)
+    # Remainder (not a fresh round()) so the three counts always sum to exactly `total`.
+    buckets = (
+        [("train", item) for item in all_items[:n_train]]
+        + [("valid", item) for item in all_items[n_train:n_train + n_valid]]
+        + [("test", item) for item in all_items[n_train + n_valid:]]
+    )
+
+    new_counts = {"train": 0, "valid": 0, "test": 0}
+    for target_split, (current_split, img_path) in buckets:
+        if target_split != current_split:
+            label_path = path / current_split / "labels" / f"{img_path.stem}.txt"
+            new_img_path = path / target_split / "images" / img_path.name
+            new_label_path = path / target_split / "labels" / f"{img_path.stem}.txt"
+            new_img_path.parent.mkdir(parents=True, exist_ok=True)
+            new_label_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(img_path), str(new_img_path))
+            if label_path.exists():
+                shutil.move(str(label_path), str(new_label_path))
+        new_counts[target_split] += 1
+
+    refresh_cached_summary(name)
+    metadata_service.record_history_event(name, {"event": "resplit", "splits": new_counts})
+    log_event("dataset_resplit", f"Re-split '{name}' into {new_counts}", dataset=name)
+    return {"splits": new_counts, "total_images": total}
 
 
 def delete_dataset(name: str) -> None:

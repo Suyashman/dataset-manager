@@ -1,11 +1,11 @@
 import time
 from pathlib import Path
 
-from app.config import PAD_WIDTH
+from app.config import PAD_WIDTH, SPLITS
 from app.services import metadata_service, yolo_service
 from app.services.logging_service import log_event
 from app.utils.errors import AppError, DuplicateDatasetNameError
-from app.utils.file_ops import copy_file_safe, iter_image_files
+from app.utils.file_ops import copy_file_safe, iter_image_files, safe_path_join, validate_safe_name
 from app.utils.numbering import zero_pad
 from app.utils.yaml_io import load_data_yaml, save_data_yaml
 
@@ -38,7 +38,27 @@ def create_empty_dataset(name: str) -> None:
     log_event("dataset_created", f"Created empty dataset '{name}' for manual annotation", dataset=name)
 
 
+def create_from_reference(source: str, destination: str) -> None:
+    """Starts a new, empty dataset that carries over the reference dataset's class list, so
+    new annotations stay compatible with it — without ever writing into the reference itself."""
+    dest_path = yolo_service.dataset_path(destination)
+    if dest_path.exists():
+        raise DuplicateDatasetNameError(f"Dataset '{destination}' already exists")
+    if not yolo_service.dataset_path(source).exists():
+        raise AppError(f"Reference dataset '{source}' not found")
+
+    yolo_service.ensure_dataset_structure(destination)
+    save_data_yaml(yolo_service.get_data_yaml_path(destination), yolo_service.get_classes(source))
+    metadata_service.record_history_event(destination, {"event": "forked_from", "source_dataset": source})
+    from app.services import dataset_service
+    dataset_service.refresh_cached_summary(destination)
+    log_event("dataset_created", f"Created '{destination}' from reference '{source}' for manual annotation", dataset=destination)
+
+
 def import_folder(dataset: str, folder_path: str, split: str, prefix: str) -> dict:
+    if split not in SPLITS:
+        raise AppError(f"Invalid split '{split}'", details={"valid_splits": list(SPLITS)})
+    validate_safe_name(prefix, "prefix")
     src = Path(folder_path)
     if not src.exists() or not src.is_dir():
         raise AppError(f"Folder not found or not a directory: {folder_path}")
@@ -98,9 +118,11 @@ def add_class(dataset: str, name: str) -> int:
 
 
 def save_boxes(dataset: str, split: str, filename: str, boxes: list[dict]) -> None:
+    if split not in SPLITS:
+        raise AppError(f"Invalid split '{split}'", details={"valid_splits": list(SPLITS)})
     path = yolo_service.dataset_path(dataset)
     stem = filename.rsplit(".", 1)[0]
-    label_path = path / split / "labels" / f"{stem}.txt"
+    label_path = safe_path_join(path, split, "labels", f"{stem}.txt")
     lines = [
         f"{b['class_id']} {b['x_center']:.6f} {b['y_center']:.6f} {b['width']:.6f} {b['height']:.6f}"
         for b in boxes
