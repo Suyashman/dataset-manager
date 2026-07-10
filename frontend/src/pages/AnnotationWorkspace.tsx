@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, Check, ChevronLeft, ChevronRight, Plus, Trash2, Upload } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Check, ChevronLeft, ChevronRight, Plus, Trash2, Upload } from "lucide-react";
 import { getDataset } from "@/api/datasets";
 import { listImages, getImageUrl, getLabel } from "@/api/images";
-import { addClass, importFolder, saveBoxes } from "@/api/annotation";
+import { addClass, deleteImage, importFolder, saveBoxes } from "@/api/annotation";
 import { AnnotationCanvas, newBoxId, type EditableBox } from "@/components/AnnotationCanvas";
 import { classColor } from "@/lib/yoloMath";
+import type { FlaggedItem } from "@/types/annotation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,7 +20,14 @@ import { cn } from "@/lib/utils";
 export function AnnotationWorkspace() {
   const { name = "" } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
+
+  // Opened from the Validation tab's "Review" action: iterate this curated list of already-
+  // flagged images instead of paginating the whole dataset.
+  const flaggedQueue = (location.state as { flaggedQueue?: FlaggedItem[] } | null)?.flaggedQueue;
+  const isFlaggedMode = !!flaggedQueue && flaggedQueue.length > 0;
+  const [queue, setQueue] = useState<FlaggedItem[]>(flaggedQueue ?? []);
 
   const { data: detail } = useQuery({ queryKey: ["dataset", name], queryFn: () => getDataset(name) });
 
@@ -30,35 +38,41 @@ export function AnnotationWorkspace() {
   const [classColors, setClassColors] = useState<Record<number, string>>({});
   const getClassColor = (id: number) => classColors[id] ?? classColor(id);
 
-  // Position is remembered per-dataset so leaving mid-review and coming back resumes here.
+  // Position is remembered per-dataset so leaving mid-review and coming back resumes here —
+  // but a flagged-image queue always starts at the top, it's a fresh curated list each time.
   const [currentIndex, setCurrentIndex] = useState(() => {
+    if (isFlaggedMode) return 0;
     const saved = Number(localStorage.getItem(`annotate-position:${name}`));
     return Number.isFinite(saved) && saved > 0 ? saved : 0;
   });
   const [jumpValue, setJumpValue] = useState("");
 
   useEffect(() => {
-    localStorage.setItem(`annotate-position:${name}`, String(currentIndex));
-  }, [name, currentIndex]);
+    if (!isFlaggedMode) localStorage.setItem(`annotate-position:${name}`, String(currentIndex));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [name, currentIndex, isFlaggedMode]);
 
   // One image fetched at a time via page_size=1 so this scales to datasets with thousands of
-  // images instead of preloading a thumbnail list up front.
+  // images instead of preloading a thumbnail list up front. Skipped entirely in flagged mode,
+  // where `queue` is already the full list of images to show.
   const { data: pageData, isLoading: imageLoading } = useQuery({
     queryKey: ["image-at", name, currentIndex],
     queryFn: () => listImages(name, undefined, currentIndex + 1, 1),
     placeholderData: keepPreviousData,
+    enabled: !isFlaggedMode,
   });
-  const currentImage = pageData?.items[0];
-  const total = pageData?.total ?? 0;
+  const currentImage = isFlaggedMode ? queue[currentIndex] : pageData?.items[0];
+  const total = isFlaggedMode ? queue.length : pageData?.total ?? 0;
 
-  // A position saved from a previously larger dataset can point past the end — snap back.
+  // A position saved from a previously larger dataset (or a queue that just lost an entry to
+  // deletion) can point past the end — snap back to the new last item.
   useEffect(() => {
-    if (pageData && total > 0 && currentIndex >= total) setCurrentIndex(total - 1);
-  }, [pageData, total, currentIndex]);
+    if (total > 0 && currentIndex >= total) setCurrentIndex(total - 1);
+  }, [total, currentIndex]);
 
   const { data: label } = useQuery({
     queryKey: ["label", name, currentImage?.split, currentImage?.filename],
-    queryFn: () => getLabel(name, currentImage.split, currentImage.filename),
+    queryFn: () => getLabel(name, currentImage!.split, currentImage!.filename),
     enabled: !!currentImage,
     retry: false,
   });
@@ -67,12 +81,19 @@ export function AnnotationWorkspace() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pendingClassId, setPendingClassId] = useState(0);
   const [newClassName, setNewClassName] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [saveState, setSaveState] = useState<"idle" | "dirty" | "saving" | "saved" | "error">("idle");
   const [importOpen, setImportOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deletingImage, setDeletingImage] = useState(false);
 
   const skipNextSaveRef = useRef(false);
-  const pendingSaveRef = useRef<{ split: string; filename: string; boxes: EditableBox[] } | null>(null);
+  // Keyed by "split::filename" rather than a single slot so edits to two different images
+  // (e.g. edit, jump away before the debounce fires, edit again) queue independently instead
+  // of one clobbering the other.
+  type PendingSave = { split: string; filename: string; boxes: EditableBox[] };
+  const pendingSavesRef = useRef<Map<string, PendingSave>>(new Map());
   const saveTimerRef = useRef<number | null>(null);
+  const retryTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!label) return;
@@ -91,25 +112,52 @@ export function AnnotationWorkspace() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [label]);
 
+  // Fires every pending save, in parallel. Entries only leave the queue once their PUT
+  // actually succeeds — a failed save stays queued (keyed by image) so the very next trigger
+  // (another edit, a navigation, unmount, or the retry timer below) resends it instead of the
+  // edit silently vanishing.
   const flushSave = () => {
     if (saveTimerRef.current) {
       window.clearTimeout(saveTimerRef.current);
       saveTimerRef.current = null;
     }
-    if (pendingSaveRef.current) {
-      const { split, filename, boxes: b } = pendingSaveRef.current;
-      pendingSaveRef.current = null;
-      setSaving(true);
-      saveBoxes(
-        name,
-        split,
-        filename,
-        b.map(({ class_id, x_center, y_center, width, height }) => ({ class_id, x_center, y_center, width, height }))
-      )
-        .then(() => queryClient.invalidateQueries({ queryKey: ["image-at", name] }))
-        .catch(() => toast.error("Failed to save annotations"))
-        .finally(() => setSaving(false));
+    if (retryTimerRef.current) {
+      window.clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
     }
+    const entries = Array.from(pendingSavesRef.current.entries());
+    if (entries.length === 0) return Promise.resolve();
+
+    setSaveState("saving");
+    return Promise.all(
+      entries.map(([key, entry]) =>
+        saveBoxes(
+          name,
+          entry.split,
+          entry.filename,
+          entry.boxes.map(({ class_id, x_center, y_center, width, height }) => ({ class_id, x_center, y_center, width, height }))
+        )
+          .then(() => {
+            // Only clear this key if it's still the same entry we just saved — a newer edit
+            // to the same image made while this request was in flight must not be dropped.
+            if (pendingSavesRef.current.get(key) === entry) pendingSavesRef.current.delete(key);
+            return true;
+          })
+          .catch(() => false)
+      )
+    ).then((results) => {
+      queryClient.invalidateQueries({ queryKey: ["image-at", name] });
+      queryClient.invalidateQueries({ queryKey: ["validation", name] });
+      queryClient.invalidateQueries({ queryKey: ["stats", name] });
+      const anyFailed = results.some((ok) => !ok);
+      if (anyFailed) {
+        toast.error("Failed to save some annotations — will retry automatically");
+        setSaveState("error");
+        retryTimerRef.current = window.setTimeout(flushSave, 3000);
+      } else {
+        setSaveState(pendingSavesRef.current.size > 0 ? "dirty" : "saved");
+      }
+    });
   };
 
   useEffect(() => {
@@ -118,13 +166,33 @@ export function AnnotationWorkspace() {
       return;
     }
     if (!currentImage) return;
-    pendingSaveRef.current = { split: currentImage.split, filename: currentImage.filename, boxes };
+    // In flagged-review mode `currentImage` is already known at mount (it comes from the local
+    // queue, not a fetch), but `boxes` still starts as `[]` until the real label loads — without
+    // this guard, that stale initial value would get scheduled for save before the actual
+    // annotations ever arrive, silently overwriting a real label with an empty one.
+    if (!label) return;
+    const key = `${currentImage.split}::${currentImage.filename}`;
+    pendingSavesRef.current.set(key, { split: currentImage.split, filename: currentImage.filename, boxes });
+    setSaveState("dirty");
     if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
     saveTimerRef.current = window.setTimeout(flushSave, 600);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boxes]);
 
-  useEffect(() => () => flushSave(), []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => { flushSave(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Closing the tab, refreshing, or navigating outside the app entirely would otherwise
+  // silently drop whatever hasn't flushed yet — warn instead of losing the edit.
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (pendingSavesRef.current.size > 0) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, []);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -166,6 +234,13 @@ export function AnnotationWorkspace() {
     navigate(`/datasets/${encodeURIComponent(name)}`);
   };
 
+  const saveStatusText =
+    saveState === "saving" ? "Saving…"
+    : saveState === "dirty" ? "Unsaved changes"
+    : saveState === "error" ? "Save failed — retrying…"
+    : saveState === "saved" ? "All changes saved"
+    : "";
+
   const handleAddClass = async () => {
     const trimmed = newClassName.trim();
     if (!trimmed) return;
@@ -191,6 +266,31 @@ export function AnnotationWorkspace() {
     if (selectedId === id) setSelectedId(null);
   };
 
+  const handleDeleteImage = async () => {
+    if (!currentImage) return;
+    setDeletingImage(true);
+    try {
+      // Drop any queued save for this image first — it's about to stop existing, so a stray
+      // retry landing after the delete must not resurrect its label file.
+      pendingSavesRef.current.delete(`${currentImage.split}::${currentImage.filename}`);
+      await deleteImage(name, currentImage.split, currentImage.filename);
+      toast.success(`Deleted ${currentImage.filename}`);
+      if (isFlaggedMode) {
+        setQueue((prev) => prev.filter((_, i) => i !== currentIndex));
+      } else {
+        await queryClient.invalidateQueries({ queryKey: ["image-at", name] });
+      }
+      await queryClient.invalidateQueries({ queryKey: ["dataset", name] });
+      await queryClient.invalidateQueries({ queryKey: ["validation", name] });
+      await queryClient.invalidateQueries({ queryKey: ["stats", name] });
+      setDeleteOpen(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to delete image");
+    } finally {
+      setDeletingImage(false);
+    }
+  };
+
   return (
     <div>
       <Link to={`/datasets/${encodeURIComponent(name)}`}>
@@ -202,20 +302,32 @@ export function AnnotationWorkspace() {
         <div>
           <h1 className="text-xl font-semibold">{name}</h1>
           <p className="text-xs text-muted-foreground">
-            {total > 0 ? `Image ${currentIndex + 1} of ${total}` : imageLoading ? "Loading…" : "No images yet"}
-            {saving && " · Saving..."}
+            {total > 0
+              ? `${isFlaggedMode ? "Flagged image" : "Image"} ${currentIndex + 1} of ${total}`
+              : imageLoading && !isFlaggedMode
+              ? "Loading…"
+              : isFlaggedMode
+              ? "No flagged images left in this review queue"
+              : "No images yet"}
+            {saveStatusText && (
+              <span className={cn("ml-1", saveState === "error" && "text-destructive")}>· {saveStatusText}</span>
+            )}
           </p>
         </div>
-        <Button size="sm" onClick={() => setImportOpen(true)}>
-          <Upload className="h-4 w-4 mr-1" /> Import Images
-        </Button>
+        {!isFlaggedMode && (
+          <Button size="sm" onClick={() => setImportOpen(true)}>
+            <Upload className="h-4 w-4 mr-1" /> Import Images
+          </Button>
+        )}
       </div>
 
-      {imageLoading && !pageData ? (
+      {!isFlaggedMode && imageLoading && !pageData ? (
         <Skeleton className="h-96 w-full" />
       ) : total === 0 ? (
         <div className="border border-dashed border-border rounded-md p-12 text-center text-muted-foreground">
-          No images yet. Click "Import Images" to bring in a folder from your computer.
+          {isFlaggedMode
+            ? "Every flagged image has been reviewed. Nothing left in this queue."
+            : 'No images yet. Click "Import Images" to bring in a folder from your computer.'}
         </div>
       ) : (
         <div className="grid grid-cols-[180px_1fr] gap-4 items-start">
@@ -268,6 +380,16 @@ export function AnnotationWorkspace() {
                 <ChevronLeft className="h-4 w-4 mr-1" /> Prev
               </Button>
               <span className="text-xs text-muted-foreground truncate max-w-[160px]">{currentImage?.filename}</span>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-destructive shrink-0"
+                title="Delete this image"
+                onClick={() => setDeleteOpen(true)}
+                disabled={!currentImage}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
               <div className="flex items-center gap-1">
                 <Input
                   type="number"
@@ -293,6 +415,13 @@ export function AnnotationWorkspace() {
                 </Button>
               )}
             </div>
+
+            {isFlaggedMode && currentImage && "reasons" in currentImage && (
+              <div className="flex items-start gap-2 rounded-md border border-yellow-500/40 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-700 dark:text-yellow-400">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                <span>{(currentImage as FlaggedItem).reasons.join(" · ")}</span>
+              </div>
+            )}
 
             {currentImage && Object.keys(classes).length > 0 && (
               <AnnotationCanvas
@@ -346,6 +475,25 @@ export function AnnotationWorkspace() {
       )}
 
       <ImportDialog open={importOpen} onOpenChange={setImportOpen} dataset={name} />
+
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete {currentImage?.filename}?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Permanently removes this image and its label file from the dataset on disk. This cannot be undone.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteOpen(false)} disabled={deletingImage}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteImage} disabled={deletingImage}>
+              {deletingImage ? "Deleting..." : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

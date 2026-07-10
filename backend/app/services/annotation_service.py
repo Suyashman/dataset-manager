@@ -132,3 +132,56 @@ def save_boxes(dataset: str, split: str, filename: str, boxes: list[dict]) -> No
         f.write("\n".join(lines))
         if lines:
             f.write("\n")
+
+
+def delete_image(dataset: str, split: str, filename: str) -> dict:
+    if split not in SPLITS:
+        raise AppError(f"Invalid split '{split}'", details={"valid_splits": list(SPLITS)})
+    path = yolo_service.dataset_path(dataset)
+    img_path = safe_path_join(path, split, "images", filename)
+    if not img_path.exists():
+        raise AppError("Image not found", details={"file": filename})
+
+    stem = filename.rsplit(".", 1)[0]
+    label_path = safe_path_join(path, split, "labels", f"{stem}.txt")
+    had_label = label_path.exists()
+
+    img_path.unlink()
+    if had_label:
+        label_path.unlink()
+
+    metadata_service.update_split_counts(dataset, {split: -1})
+    from app.services import dataset_service
+    dataset_service.refresh_cached_summary(dataset)
+    metadata_service.record_history_event(dataset, {
+        "event": "image_deleted",
+        "split": split,
+        "filename": filename,
+        "had_label": had_label,
+    })
+    log_event("image_deleted", f"Deleted image '{filename}' from '{dataset}/{split}'", dataset=dataset, count=1)
+
+    return {"deleted": True, "filename": filename, "had_label": had_label}
+
+
+def delete_orphan_label(dataset: str, split: str, filename: str) -> dict:
+    """Removes a label file that has no matching image (the validation 'missing_images'
+    case) — there's nothing to preview or re-annotate, just a stray .txt to clean up."""
+    if split not in SPLITS:
+        raise AppError(f"Invalid split '{split}'", details={"valid_splits": list(SPLITS)})
+    path = yolo_service.dataset_path(dataset)
+    label_path = safe_path_join(path, split, "labels", filename)
+    if not label_path.exists():
+        raise AppError("Label file not found", details={"file": filename})
+
+    label_path.unlink()
+    from app.services import dataset_service
+    dataset_service.refresh_cached_summary(dataset)
+    metadata_service.record_history_event(dataset, {
+        "event": "orphan_label_deleted",
+        "split": split,
+        "filename": filename,
+    })
+    log_event("orphan_label_deleted", f"Deleted orphan label '{filename}' from '{dataset}/{split}'", dataset=dataset, count=1)
+
+    return {"deleted": True, "filename": filename}

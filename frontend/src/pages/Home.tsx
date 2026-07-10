@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Database, FolderPlus, GitMerge, PenTool, Wand2, Rocket, ScanEye } from "lucide-react";
+import { Database, FolderPlus, GitMerge, PenTool, SprayCan, Wand2, Rocket, ScanEye } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 const groups = [
@@ -8,6 +8,7 @@ const groups = [
     cards: [
       { to: "/create", title: "Create Dataset", desc: "Build a fresh YOLO dataset from a downloaded Roboflow export.", icon: FolderPlus },
       { to: "/annotate", title: "Annotate", icon: PenTool, desc: "Draw bounding boxes on your own images to build a dataset from scratch." },
+      { to: "/clean", title: "Clean Dataset", icon: SprayCan, desc: "Step through an already-annotated dataset, fix wrong classes or boxes, and delete bad images." },
       { to: "/merge", title: "Merge Dataset", desc: "Combine another dataset into an existing one with automatic class remapping.", icon: GitMerge },
       { to: "/augment", title: "Augment Dataset", icon: Wand2, desc: "Grow a dataset with flips, rotations, and color augmentations." },
       { to: "/datasets", title: "Browse Datasets", desc: "View classes, split counts, stats, and validation health for every dataset.", icon: Database },

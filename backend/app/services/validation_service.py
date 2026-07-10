@@ -1,6 +1,9 @@
 
+import hashlib
+import json
+
 from app.config import SPLITS
-from app.services import yolo_service
+from app.services import metadata_service, yolo_service
 from app.utils.errors import DatasetNotFoundError
 from app.utils.file_ops import compute_file_hash, iter_image_files
 from app.utils.image_utils import is_image_corrupted
@@ -16,7 +19,8 @@ def _build_context(dataset_name: str) -> dict:
         images = list(iter_image_files(path / split / "images"))
         labels_dir = path / split / "labels"
         labels = sorted(labels_dir.glob("*.txt")) if labels_dir.exists() else []
-        split_files[split] = {"images": images, "labels": labels}
+        stem_to_image = {img.stem: img.name for img in images}
+        split_files[split] = {"images": images, "labels": labels, "stem_to_image": stem_to_image}
     return {"path": path, "classes": classes, "split_files": split_files}
 
 
@@ -94,7 +98,8 @@ def _check_empty_label_files(ctx) -> list[dict]:
         for lbl in files["labels"]:
             text = lbl.read_text(encoding="utf-8", errors="ignore").strip()
             if not text:
-                issues.append({"check": "empty_label_files", "severity": "info", "split": split, "file": lbl.name, "message": f"Label file '{lbl.name}' has no annotations"})
+                image_file = files["stem_to_image"].get(lbl.stem)
+                issues.append({"check": "empty_label_files", "severity": "info", "split": split, "file": lbl.name, "message": f"Label file '{lbl.name}' has no annotations", "details": {"image_file": image_file} if image_file else {}})
     return issues
 
 
@@ -103,6 +108,8 @@ def _check_invalid_label_lines(ctx) -> list[dict]:
     nc = len(ctx["classes"])
     for split, files in ctx["split_files"].items():
         for lbl in files["labels"]:
+            image_file = files["stem_to_image"].get(lbl.stem)
+            details = {"image_file": image_file} if image_file else {}
             with open(lbl, "r", encoding="utf-8", errors="ignore") as f:
                 for line_no, line in enumerate(f, start=1):
                     stripped = line.strip()
@@ -110,27 +117,47 @@ def _check_invalid_label_lines(ctx) -> list[dict]:
                         continue
                     tokens = stripped.split()
                     if len(tokens) < 5:
-                        issues.append({"check": "invalid_label_lines", "severity": "error", "split": split, "file": lbl.name, "line_number": line_no, "message": "malformed_line: expected at least 5 tokens"})
+                        issues.append({"check": "invalid_label_lines", "severity": "error", "split": split, "file": lbl.name, "line_number": line_no, "message": "malformed_line: expected at least 5 tokens", "details": details})
                         continue
                     try:
                         class_id = int(tokens[0])
                         coords = [float(t) for t in tokens[1:5]]
                     except ValueError:
-                        issues.append({"check": "invalid_label_lines", "severity": "error", "split": split, "file": lbl.name, "line_number": line_no, "message": "malformed_line: non-numeric tokens"})
+                        issues.append({"check": "invalid_label_lines", "severity": "error", "split": split, "file": lbl.name, "line_number": line_no, "message": "malformed_line: non-numeric tokens", "details": details})
                         continue
                     if class_id < 0 or (nc and class_id >= nc):
-                        issues.append({"check": "invalid_label_lines", "severity": "error", "split": split, "file": lbl.name, "line_number": line_no, "message": f"invalid_class_id: {class_id} (nc={nc})"})
+                        issues.append({"check": "invalid_label_lines", "severity": "error", "split": split, "file": lbl.name, "line_number": line_no, "message": f"invalid_class_id: {class_id} (nc={nc})", "details": details})
                     if any(c < 0.0 or c > 1.0 for c in coords):
-                        issues.append({"check": "invalid_label_lines", "severity": "error", "split": split, "file": lbl.name, "line_number": line_no, "message": "bad_coordinate_range: coordinates must be within [0,1]"})
+                        issues.append({"check": "invalid_label_lines", "severity": "error", "split": split, "file": lbl.name, "line_number": line_no, "message": "bad_coordinate_range: coordinates must be within [0,1]", "details": details})
                     else:
                         x, y, w, h = coords
                         if x - w / 2 < 0 or x + w / 2 > 1 or y - h / 2 < 0 or y + h / 2 > 1:
-                            issues.append({"check": "invalid_label_lines", "severity": "warning", "split": split, "file": lbl.name, "line_number": line_no, "message": "box_out_of_bounds: box extends outside image bounds"})
+                            issues.append({"check": "invalid_label_lines", "severity": "warning", "split": split, "file": lbl.name, "line_number": line_no, "message": "box_out_of_bounds: box extends outside image bounds", "details": details})
     return issues
+
+
+def _compute_fingerprint(ctx) -> str:
+    """Stat-only signature (name/size/mtime per file) — cheap to compute on every call, unlike
+    the full hash-every-image-and-decode-every-image work the checks below do. Any add, delete,
+    or edit changes this, so it's a safe cache key: identical fingerprint means identical files."""
+    parts = []
+    for split, files in sorted(ctx["split_files"].items()):
+        for kind in ("images", "labels"):
+            for f in files[kind]:
+                st = f.stat()
+                parts.append((split, kind, f.name, st.st_size, st.st_mtime_ns))
+    parts.sort()
+    return hashlib.sha256(json.dumps(parts).encode()).hexdigest()
 
 
 def run_validation(dataset_name: str) -> dict:
     ctx = _build_context(dataset_name)
+    fingerprint = _compute_fingerprint(ctx)
+
+    cached = metadata_service.get_cached_validation(dataset_name)
+    if cached and cached.get("fingerprint") == fingerprint:
+        return cached["report"]
+
     issues: list[dict] = []
     issues += _check_missing_labels(ctx)
     issues += _check_missing_images(ctx)
@@ -145,4 +172,6 @@ def run_validation(dataset_name: str) -> dict:
     for issue in issues:
         summary[issue["check"]] = summary.get(issue["check"], 0) + 1
 
-    return {"dataset": dataset_name, "issues": issues, "summary": summary}
+    report = {"dataset": dataset_name, "issues": issues, "summary": summary}
+    metadata_service.set_cached_validation(dataset_name, fingerprint, report)
+    return report

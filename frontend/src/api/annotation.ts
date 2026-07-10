@@ -18,3 +18,13 @@ export const saveBoxes = (dataset: string, split: string, filename: string, boxe
     `/annotation/${encodeURIComponent(dataset)}/${split}/${encodeURIComponent(filename)}/boxes`,
     { boxes }
   );
+
+export const deleteImage = (dataset: string, split: string, filename: string) =>
+  api.del<{ deleted: boolean; filename: string; had_label: boolean }>(
+    `/annotation/${encodeURIComponent(dataset)}/${split}/${encodeURIComponent(filename)}`
+  );
+
+export const deleteOrphanLabel = (dataset: string, split: string, filename: string) =>
+  api.del<{ deleted: boolean; filename: string }>(
+    `/annotation/${encodeURIComponent(dataset)}/${split}/orphan-label/${encodeURIComponent(filename)}`
+  );

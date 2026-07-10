@@ -41,3 +41,13 @@ async def add_class(dataset: str, req: AddClassRequest):
 async def save_boxes(dataset: str, split: str, filename: str, req: SaveBoxesRequest):
     annotation_service.save_boxes(dataset, split, filename, [b.model_dump() for b in req.boxes])
     return {"saved": True}
+
+
+@router.delete("/{dataset}/{split}/{filename}")
+async def delete_image(dataset: str, split: str, filename: str):
+    return annotation_service.delete_image(dataset, split, filename)
+
+
+@router.delete("/{dataset}/{split}/orphan-label/{filename}")
+async def delete_orphan_label(dataset: str, split: str, filename: str):
+    return annotation_service.delete_orphan_label(dataset, split, filename)

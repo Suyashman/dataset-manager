@@ -17,3 +17,9 @@ export interface Box {
   width: number;
   height: number;
 }
+
+export interface FlaggedItem {
+  split: string;
+  filename: string;
+  reasons: string[];
+}

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Database, Files, FolderTree, Shuffle, Tag, Trash2 } from "lucide-react";
+import { ArrowLeft, Database, Files, FolderTree, Shuffle, SprayCan, Tag, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { ApiError } from "@/api/client";
 import { deleteDataset, getDataset, resplitDataset } from "@/api/datasets";
@@ -52,7 +52,11 @@ export function DatasetDetail() {
     retry: false,
   });
   const { data: stats } = useQuery({ queryKey: ["stats", name], queryFn: () => getStats(name), enabled: !isError });
-  const { data: validation } = useQuery({ queryKey: ["validation", name], queryFn: () => getValidation(name), enabled: !isError });
+  const { data: validation, isFetching: validationFetching } = useQuery({
+    queryKey: ["validation", name],
+    queryFn: () => getValidation(name),
+    enabled: !isError,
+  });
 
   if (isError) {
     return (
@@ -121,6 +125,9 @@ export function DatasetDetail() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => navigate(`/annotate/${encodeURIComponent(name)}`)}>
+            <SprayCan className="h-4 w-4 mr-1" /> Clean Dataset
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setSplitOpen(true)}>
             <Shuffle className="h-4 w-4 mr-1" /> Split Dataset
           </Button>
@@ -287,7 +294,19 @@ export function DatasetDetail() {
           )}
         </TabsContent>
 
-        <TabsContent value="validation">{validation && <ValidationReportPanel report={validation} />}</TabsContent>
+        <TabsContent value="validation">
+          {validation && (
+            <ValidationReportPanel
+              dataset={name}
+              report={validation}
+              refreshing={validationFetching}
+              onRefresh={() => {
+                queryClient.invalidateQueries({ queryKey: ["validation", name] });
+                queryClient.invalidateQueries({ queryKey: ["stats", name] });
+              }}
+            />
+          )}
+        </TabsContent>
       </Tabs>
     </div>
   );

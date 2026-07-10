@@ -14,6 +14,7 @@ import { AugmentDataset } from "@/pages/AugmentDataset";
 import { InferenceStudio } from "@/pages/InferenceStudio";
 import { AnnotateSetup } from "@/pages/AnnotateSetup";
 import { AnnotationWorkspace } from "@/pages/AnnotationWorkspace";
+import { CleanDatasetSetup } from "@/pages/CleanDatasetSetup";
 
 function App() {
   return (
@@ -27,6 +28,7 @@ function App() {
         <Route path="/augment" element={<AugmentDataset />} />
         <Route path="/annotate" element={<AnnotateSetup />} />
         <Route path="/annotate/:name" element={<AnnotationWorkspace />} />
+        <Route path="/clean" element={<CleanDatasetSetup />} />
         <Route path="/datasets" element={<DatasetList />} />
         <Route path="/datasets/:name" element={<DatasetDetail />} />
         <Route path="/datasets/:name/images/:split/:filename" element={<ImagePreview />} />

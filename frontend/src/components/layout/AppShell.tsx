@@ -12,13 +12,22 @@ import {
   ScanEye,
   PenTool,
   Sparkles,
+  SprayCan,
+  type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/layout/ThemeToggle";
 
+interface NavItem {
+  to: string;
+  label: string;
+  icon: LucideIcon;
+  end?: boolean;
+}
+
 // Grouped by where each page sits in the dataset lifecycle: build/curate first, then
 // train/infer on the result, with search/logs/settings as cross-cutting utilities last.
-const navGroups = [
+const navGroups: { heading: string | null; items: NavItem[] }[] = [
   {
     heading: null,
     items: [{ to: "/", label: "Home", icon: LayoutDashboard, end: true }],
@@ -28,6 +37,7 @@ const navGroups = [
     items: [
       { to: "/create", label: "Create Dataset", icon: FolderPlus },
       { to: "/annotate", label: "Annotate", icon: PenTool },
+      { to: "/clean", label: "Clean Dataset", icon: SprayCan },
       { to: "/merge", label: "Merge Dataset", icon: GitMerge },
       { to: "/augment", label: "Augment Dataset", icon: Wand2 },
       { to: "/datasets", label: "Browse Datasets", icon: Database },

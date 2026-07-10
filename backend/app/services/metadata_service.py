@@ -141,3 +141,19 @@ def set_cached_summary(dataset_name: str, summary: dict) -> None:
         data = load_metadata(dataset_name)
         data["cache"] = {**summary, "computed_at": datetime.now(timezone.utc).isoformat()}
         save_metadata(dataset_name, data)
+
+
+def get_cached_validation(dataset_name: str) -> dict | None:
+    """Validation re-hashes and re-decodes every image to check for duplicates/corruption —
+    expensive on large datasets. Cached alongside a cheap stat-only fingerprint (see
+    validation_service._compute_fingerprint) so unchanged datasets don't pay that cost on every
+    tab visit; any file add/remove/edit changes the fingerprint and forces a fresh run."""
+    return load_metadata(dataset_name).get("validation_cache")
+
+
+def set_cached_validation(dataset_name: str, fingerprint: str, report: dict) -> None:
+    lock = _lock_for(dataset_name)
+    with lock:
+        data = load_metadata(dataset_name)
+        data["validation_cache"] = {"fingerprint": fingerprint, "report": report}
+        save_metadata(dataset_name, data)
