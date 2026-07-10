@@ -1,0 +1,2 @@
+I want the ability to change the color of the bounding box 
+is it okay if the bounding boxes are always perpendicular , or can it be slanting to fit varying shapes

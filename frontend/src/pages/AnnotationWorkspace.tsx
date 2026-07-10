@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Check, ChevronLeft, ChevronRight, Plus, Trash2, Upload } from "lucide-react";
+import { ArrowLeft, Check, ChevronLeft, ChevronRight, Plus, Trash2, Upload } from "lucide-react";
 import { getDataset } from "@/api/datasets";
 import { listImages, getImageUrl, getLabel } from "@/api/images";
 import { addClass, importFolder, saveBoxes } from "@/api/annotation";
@@ -11,9 +11,9 @@ import { classColor } from "@/lib/yoloMath";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 export function AnnotationWorkspace() {
@@ -22,10 +22,6 @@ export function AnnotationWorkspace() {
   const queryClient = useQueryClient();
 
   const { data: detail } = useQuery({ queryKey: ["dataset", name], queryFn: () => getDataset(name) });
-  const { data: imageList } = useQuery({
-    queryKey: ["images", name, "all"],
-    queryFn: () => listImages(name, undefined, 1, 1000),
-  });
 
   const classes: Record<number, string> = {};
   if (detail) for (const [k, v] of Object.entries(detail.classes)) classes[Number(k)] = v;
@@ -34,9 +30,31 @@ export function AnnotationWorkspace() {
   const [classColors, setClassColors] = useState<Record<number, string>>({});
   const getClassColor = (id: number) => classColors[id] ?? classColor(id);
 
-  const images = imageList?.items ?? [];
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const currentImage = images[currentIndex];
+  // Position is remembered per-dataset so leaving mid-review and coming back resumes here.
+  const [currentIndex, setCurrentIndex] = useState(() => {
+    const saved = Number(localStorage.getItem(`annotate-position:${name}`));
+    return Number.isFinite(saved) && saved > 0 ? saved : 0;
+  });
+  const [jumpValue, setJumpValue] = useState("");
+
+  useEffect(() => {
+    localStorage.setItem(`annotate-position:${name}`, String(currentIndex));
+  }, [name, currentIndex]);
+
+  // One image fetched at a time via page_size=1 so this scales to datasets with thousands of
+  // images instead of preloading a thumbnail list up front.
+  const { data: pageData, isLoading: imageLoading } = useQuery({
+    queryKey: ["image-at", name, currentIndex],
+    queryFn: () => listImages(name, undefined, currentIndex + 1, 1),
+    placeholderData: keepPreviousData,
+  });
+  const currentImage = pageData?.items[0];
+  const total = pageData?.total ?? 0;
+
+  // A position saved from a previously larger dataset can point past the end — snap back.
+  useEffect(() => {
+    if (pageData && total > 0 && currentIndex >= total) setCurrentIndex(total - 1);
+  }, [pageData, total, currentIndex]);
 
   const { data: label } = useQuery({
     queryKey: ["label", name, currentImage?.split, currentImage?.filename],
@@ -88,7 +106,7 @@ export function AnnotationWorkspace() {
         filename,
         b.map(({ class_id, x_center, y_center, width, height }) => ({ class_id, x_center, y_center, width, height }))
       )
-        .then(() => queryClient.invalidateQueries({ queryKey: ["images", name, "all"] }))
+        .then(() => queryClient.invalidateQueries({ queryKey: ["image-at", name] }))
         .catch(() => toast.error("Failed to save annotations"))
         .finally(() => setSaving(false));
     }
@@ -129,18 +147,23 @@ export function AnnotationWorkspace() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, currentIndex, images.length, sortedClassIds.join(",")]);
+  }, [selectedId, currentIndex, total, sortedClassIds.join(",")]);
 
   const goTo = (i: number) => {
-    if (i < 0 || i >= images.length) return;
+    if (i < 0 || i >= total) return;
     flushSave();
     setCurrentIndex(i);
   };
 
+  const handleJump = () => {
+    const n = Number(jumpValue);
+    if (Number.isFinite(n) && n >= 1 && n <= total) goTo(n - 1);
+    setJumpValue("");
+  };
+
   const handleDone = () => {
     flushSave();
-    toast.success("Dataset created");
-    navigate("/");
+    navigate(`/datasets/${encodeURIComponent(name)}`);
   };
 
   const handleAddClass = async () => {
@@ -170,11 +193,16 @@ export function AnnotationWorkspace() {
 
   return (
     <div>
+      <Link to={`/datasets/${encodeURIComponent(name)}`}>
+        <Button variant="ghost" size="sm" className="mb-2 -ml-2">
+          <ArrowLeft className="h-4 w-4 mr-1" /> Back to {name}
+        </Button>
+      </Link>
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-xl font-semibold">{name}</h1>
           <p className="text-xs text-muted-foreground">
-            {images.length > 0 ? `Image ${currentIndex + 1} of ${images.length}` : "No images yet"}
+            {total > 0 ? `Image ${currentIndex + 1} of ${total}` : imageLoading ? "Loading…" : "No images yet"}
             {saving && " · Saving..."}
           </p>
         </div>
@@ -183,12 +211,14 @@ export function AnnotationWorkspace() {
         </Button>
       </div>
 
-      {images.length === 0 ? (
+      {imageLoading && !pageData ? (
+        <Skeleton className="h-96 w-full" />
+      ) : total === 0 ? (
         <div className="border border-dashed border-border rounded-md p-12 text-center text-muted-foreground">
           No images yet. Click "Import Images" to bring in a folder from your computer.
         </div>
       ) : (
-        <div className="grid grid-cols-[180px_1fr_200px] gap-4 items-start">
+        <div className="grid grid-cols-[180px_1fr] gap-4 items-start">
           <div className="space-y-3">
             <Label className="text-xs">Classes</Label>
             <div className="space-y-1">
@@ -233,14 +263,29 @@ export function AnnotationWorkspace() {
           </div>
 
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <Button variant="outline" size="sm" onClick={() => goTo(currentIndex - 1)} disabled={currentIndex === 0}>
                 <ChevronLeft className="h-4 w-4 mr-1" /> Prev
               </Button>
-              <span className="text-xs text-muted-foreground truncate max-w-[200px]">{currentImage?.filename}</span>
-              {currentIndex === images.length - 1 ? (
+              <span className="text-xs text-muted-foreground truncate max-w-[160px]">{currentImage?.filename}</span>
+              <div className="flex items-center gap-1">
+                <Input
+                  type="number"
+                  min={1}
+                  max={total}
+                  value={jumpValue}
+                  onChange={(e) => setJumpValue(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleJump()}
+                  placeholder={`# 1-${total}`}
+                  className="h-7 w-24 text-xs"
+                />
+                <Button variant="outline" size="sm" className="h-7" onClick={handleJump}>
+                  Go
+                </Button>
+              </div>
+              {currentIndex === total - 1 ? (
                 <Button size="sm" onClick={handleDone}>
-                  <Check className="h-4 w-4 mr-1" /> Done
+                  <Check className="h-4 w-4 mr-1" /> Finish
                 </Button>
               ) : (
                 <Button variant="outline" size="sm" onClick={() => goTo(currentIndex + 1)}>
@@ -297,30 +342,6 @@ export function AnnotationWorkspace() {
               ))}
             </div>
           </div>
-
-          <div className="space-y-1 max-h-[600px] overflow-y-auto">
-            <Label className="text-xs">All images</Label>
-            {images.map((img, i) => (
-              <button
-                key={`${img.split}/${img.filename}`}
-                onClick={() => goTo(i)}
-                className={cn(
-                  "flex items-center gap-2 w-full text-left p-1 rounded-md border",
-                  i === currentIndex ? "border-foreground" : "border-transparent hover:bg-accent/30"
-                )}
-              >
-                <img
-                  src={getImageUrl(name, img.split, img.filename)}
-                  alt={img.filename}
-                  className="h-10 w-10 object-cover rounded shrink-0"
-                />
-                <span className="text-xs truncate flex-1">{img.filename}</span>
-                <Badge variant={img.box_count > 0 ? "secondary" : "outline"} className="h-4 px-1 text-[10px] shrink-0">
-                  {img.box_count}
-                </Badge>
-              </button>
-            ))}
-          </div>
         </div>
       )}
 
@@ -350,7 +371,7 @@ function ImportDialog({ open, onOpenChange, dataset }: { open: boolean; onOpenCh
       const res = await importFolder(dataset, { folder_path: folderPath.trim(), split, prefix: prefix.toUpperCase() });
       toast.success(`Imported ${res.images_added} image(s)`);
       if (res.images_skipped > 0) toast.warning(`${res.images_skipped} file(s) skipped`);
-      await queryClient.invalidateQueries({ queryKey: ["images", dataset, "all"] });
+      await queryClient.invalidateQueries({ queryKey: ["image-at", dataset] });
       await queryClient.invalidateQueries({ queryKey: ["dataset", dataset] });
       onOpenChange(false);
       setFolderPath("");
