@@ -162,8 +162,13 @@ export function AnnotationCanvas({
     const rect = canvasRef.current!.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
+    // Without this, starting a new box anywhere inside an existing one (e.g. drawing eyewear
+    // within a person box — PPE annotations nest constantly) always hit-tests the existing box
+    // first and drags it instead. Shift bypasses both hit-tests below so a new box always starts
+    // under the cursor; release Shift to go back to selecting/moving/resizing as normal.
+    const forceDraw = e.shiftKey;
 
-    if (selectedId) {
+    if (!forceDraw && selectedId) {
       const selBox = boxes.find((b) => b.id === selectedId);
       if (selBox) {
         const handle = hitTestHandle(mx, my, selBox);
@@ -174,11 +179,13 @@ export function AnnotationCanvas({
       }
     }
 
-    const hit = hitTestBox(mx, my);
-    if (hit) {
-      onSelect(hit.id);
-      dragRef.current = { type: "move", id: hit.id, startX: mx, startY: my, origBox: hit };
-      return;
+    if (!forceDraw) {
+      const hit = hitTestBox(mx, my);
+      if (hit) {
+        onSelect(hit.id);
+        dragRef.current = { type: "move", id: hit.id, startX: mx, startY: my, origBox: hit };
+        return;
+      }
     }
 
     const id = newBoxId();

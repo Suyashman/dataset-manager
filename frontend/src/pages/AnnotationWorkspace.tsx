@@ -440,16 +440,22 @@ export function AnnotationWorkspace() {
             )}
 
             {currentImage && Object.keys(classes).length > 0 && (
-              <AnnotationCanvas
-                imageUrl={getImageUrl(name, currentImage.split, currentImage.filename)}
-                boxes={boxes}
-                classNames={classes}
-                classColors={classColors}
-                selectedId={selectedId}
-                onSelect={setSelectedId}
-                onBoxesChange={setBoxes}
-                pendingClassId={pendingClassId}
-              />
+              <>
+                <AnnotationCanvas
+                  imageUrl={getImageUrl(name, currentImage.split, currentImage.filename)}
+                  boxes={boxes}
+                  classNames={classes}
+                  classColors={classColors}
+                  selectedId={selectedId}
+                  onSelect={setSelectedId}
+                  onBoxesChange={setBoxes}
+                  pendingClassId={pendingClassId}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Hold <kbd className="px-1 py-0.5 rounded border border-border bg-muted text-[0.7rem]">Shift</kbd> while
+                  drawing to start a new box on top of an existing one, instead of dragging it.
+                </p>
+              </>
             )}
             {Object.keys(classes).length === 0 && (
               <div className="border border-dashed border-border rounded-md p-12 text-center text-muted-foreground text-sm">
