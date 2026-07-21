@@ -95,8 +95,28 @@ export function AnnotationWorkspace() {
   const saveTimerRef = useRef<number | null>(null);
   const retryTimerRef = useRef<number | null>(null);
 
+  // Guards against showing one image's boxes over a different image. `label` only updates once
+  // its fetch resolves, but `boxes` state has no reason to wait for that — left alone, whatever
+  // was on screen for the *previous* image stays visible (attributed to the new one) until the
+  // fetch completes. Clearing to [] the instant the image identity changes means the canvas is
+  // honestly empty while loading instead of silently wrong.
+  const currentImageKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    const key = currentImage ? `${currentImage.split}::${currentImage.filename}` : null;
+    if (key === currentImageKeyRef.current) return;
+    currentImageKeyRef.current = key;
+    skipNextSaveRef.current = true;
+    setBoxes([]);
+    setSelectedId(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentImage?.split, currentImage?.filename]);
+
   useEffect(() => {
     if (!label) return;
+    // Only apply this label's boxes if it's still for the currently-displayed image — an
+    // in-flight fetch for a since-abandoned image (e.g. rapid delete-delete-delete) resolving
+    // late must not repopulate boxes for whatever is on screen now.
+    if (currentImageKeyRef.current !== (currentImage ? `${currentImage.split}::${currentImage.filename}` : null)) return;
     skipNextSaveRef.current = true;
     setBoxes(
       label.boxes.map((b) => ({
