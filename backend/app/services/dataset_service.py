@@ -72,6 +72,29 @@ def refresh_cached_summary(name: str) -> dict:
     return summary
 
 
+def adjust_cached_summary(name: str, split: str, image_delta: int, size_delta: int) -> dict:
+    """Applies a small known delta (e.g. one image+label removed) to the existing cached
+    summary instead of recomputing it from scratch. _compute_summary_from_disk stats every file
+    in the dataset to total up size_bytes — fine for a bulk operation done once, but deleting a
+    single image from the UI was calling refresh_cached_summary() on every click, which measured
+    ~2s on a ~5500-image dataset just to account for one file going away. Falls back to a full
+    recompute if there's no cached summary yet to adjust."""
+    cached = metadata_service.get_cached_summary(name)
+    if cached is None:
+        return refresh_cached_summary(name)
+
+    splits = dict(cached.get("splits", {}))
+    splits[split] = max(0, splits.get(split, 0) + image_delta)
+    summary = {
+        "splits": splits,
+        "total_images": max(0, cached.get("total_images", 0) + image_delta),
+        "num_classes": cached.get("num_classes", 0),
+        "size_bytes": max(0, cached.get("size_bytes", 0) + size_delta),
+    }
+    metadata_service.set_cached_summary(name, summary)
+    return summary
+
+
 def _get_or_build_cached_summary(name: str) -> dict:
     cached = metadata_service.get_cached_summary(name)
     if cached is not None:

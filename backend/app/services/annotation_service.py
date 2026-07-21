@@ -146,13 +146,17 @@ def delete_image(dataset: str, split: str, filename: str) -> dict:
     label_path = safe_path_join(path, split, "labels", f"{stem}.txt")
     had_label = label_path.exists()
 
+    size_delta = -img_path.stat().st_size
+    if had_label:
+        size_delta -= label_path.stat().st_size
+
     img_path.unlink()
     if had_label:
         label_path.unlink()
 
     metadata_service.update_split_counts(dataset, {split: -1})
     from app.services import dataset_service
-    dataset_service.refresh_cached_summary(dataset)
+    dataset_service.adjust_cached_summary(dataset, split, image_delta=-1, size_delta=size_delta)
     metadata_service.record_history_event(dataset, {
         "event": "image_deleted",
         "split": split,
@@ -174,9 +178,10 @@ def delete_orphan_label(dataset: str, split: str, filename: str) -> dict:
     if not label_path.exists():
         raise AppError("Label file not found", details={"file": filename})
 
+    size_delta = -label_path.stat().st_size
     label_path.unlink()
     from app.services import dataset_service
-    dataset_service.refresh_cached_summary(dataset)
+    dataset_service.adjust_cached_summary(dataset, split, image_delta=0, size_delta=size_delta)
     metadata_service.record_history_event(dataset, {
         "event": "orphan_label_deleted",
         "split": split,
