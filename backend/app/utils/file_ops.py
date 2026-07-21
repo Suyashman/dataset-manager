@@ -30,12 +30,26 @@ def safe_path_join(base: Path, *parts: str) -> Path:
     return candidate
 
 
+# Every caller here re-lists and re-sorts the whole directory — fine for a handful of files,
+# but list_images fetches images one at a time (page_size=1) during annotation review, so a
+# 4000+ file split directory was getting fully re-scanned on every single "Next" click (measured
+# 500ms-1.3s per call on a ~5500-image dataset). Cached by directory mtime, which NTFS updates on
+# any file add/remove/rename within it — no manual invalidation needed, and content edits to an
+# existing file don't change the listing anyway so they don't need to invalidate it.
+_image_listing_cache: dict[Path, tuple[float, list[Path]]] = {}
+
+
 def iter_image_files(directory: Path) -> Iterator[Path]:
     if not directory.exists():
         return
-    for p in sorted(directory.iterdir()):
-        if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS:
-            yield p
+    mtime = directory.stat().st_mtime
+    cached = _image_listing_cache.get(directory)
+    if cached is not None and cached[0] == mtime:
+        yield from cached[1]
+        return
+    files = [p for p in sorted(directory.iterdir()) if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS]
+    _image_listing_cache[directory] = (mtime, files)
+    yield from files
 
 
 def copy_file_safe(src: Path, dst: Path) -> None:
