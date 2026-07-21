@@ -198,9 +198,25 @@ export function AnnotationWorkspace() {
     const handler = (e: KeyboardEvent) => {
       const tag = (document.activeElement?.tagName || "").toLowerCase();
       if (tag === "input" || tag === "textarea") return;
-      if ((e.key === "Delete" || e.key === "Backspace") && selectedId) {
-        setBoxes((prev) => prev.filter((b) => b.id !== selectedId));
-        setSelectedId(null);
+
+      // While the delete-image confirm dialog is open, Enter confirms it (Escape already
+      // closes it via Radix's built-in handling) — keeps the whole delete flow keyboard-only
+      // without removing the one safety check against an accidental key press.
+      if (deleteOpen) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          handleDeleteImage();
+        }
+        return;
+      }
+
+      if (e.key === "Delete" || e.key === "Backspace") {
+        if (selectedId) {
+          setBoxes((prev) => prev.filter((b) => b.id !== selectedId));
+          setSelectedId(null);
+        } else if (currentImage) {
+          setDeleteOpen(true);
+        }
       } else if (e.key === "ArrowRight") {
         goTo(currentIndex + 1);
       } else if (e.key === "ArrowLeft") {
@@ -215,7 +231,7 @@ export function AnnotationWorkspace() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, currentIndex, total, sortedClassIds.join(",")]);
+  }, [selectedId, currentIndex, total, sortedClassIds.join(","), deleteOpen, currentImage]);
 
   const goTo = (i: number) => {
     if (i < 0 || i >= total) return;
@@ -384,7 +400,7 @@ export function AnnotationWorkspace() {
                 variant="ghost"
                 size="icon"
                 className="h-7 w-7 text-destructive shrink-0"
-                title="Delete this image"
+                title="Delete this image (Delete/Backspace, then Enter to confirm)"
                 onClick={() => setDeleteOpen(true)}
                 disabled={!currentImage}
               >
