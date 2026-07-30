@@ -13,7 +13,6 @@ export interface EditableBox {
 interface AnnotationCanvasProps {
   imageUrl: string;
   boxes: EditableBox[];
-  classNames: Record<number, string>;
   classColors: Record<number, string>;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
@@ -42,7 +41,6 @@ export function newBoxId() {
 export function AnnotationCanvas({
   imageUrl,
   boxes,
-  classNames,
   classColors,
   selectedId,
   onSelect,
@@ -100,14 +98,6 @@ export function AnnotationCanvas({
       ctx.strokeStyle = color;
       ctx.lineWidth = isSelected ? 3 : 2;
       ctx.strokeRect(p.x, p.y, p.width, p.height);
-
-      const label = classNames[b.class_id] ?? `class_${b.class_id}`;
-      ctx.font = "12px sans-serif";
-      const tw = ctx.measureText(label).width;
-      ctx.fillStyle = color;
-      ctx.fillRect(p.x, Math.max(0, p.y - 16), tw + 8, 16);
-      ctx.fillStyle = "#fff";
-      ctx.fillText(label, p.x + 4, Math.max(12, p.y - 4));
 
       if (isSelected) {
         const corners: [number, number][] = [

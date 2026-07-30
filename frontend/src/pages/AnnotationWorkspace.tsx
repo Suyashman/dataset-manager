@@ -464,7 +464,6 @@ export function AnnotationWorkspace() {
                 <AnnotationCanvas
                   imageUrl={getImageUrl(name, currentImage.split, currentImage.filename)}
                   boxes={boxes}
-                  classNames={classes}
                   classColors={classColors}
                   selectedId={selectedId}
                   onSelect={setSelectedId}
