@@ -16,3 +16,12 @@ metadata/*.json
 logs/*.log
 .env
 .claude/settings.local.json
+
+# Local working copy of the SAM3 auto-labeler. It has its own repository
+# (Suyashman/SAM3-Autolabeler) and is consumed as a separate process, never built or
+# imported by this app — see docs/superpowers/specs/2026-09-10-sam3-integration-design.md
+SAM3/
+
+# Label backups written by destructive annotation edits, and local screenshots.
+_backup_labels_*/
+Screenshots/
