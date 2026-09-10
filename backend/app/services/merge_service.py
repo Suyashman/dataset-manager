@@ -71,18 +71,29 @@ def merge_dataset(
     splits_to_include: list[str],
     progress_cb=None,
     class_filter: dict[int, str] | None = None,
+    source_root: Path | None = None,
 ) -> dict:
     """Copies+renames images/labels from source into destination, remapping class ids.
     Used directly for both 'create' (destination starts empty) and 'merge' flows.
 
     `class_filter`, if given, keeps only the listed source class ids (optionally renamed) and
     strips every label line for any other class out of the copied label files.
+
+    `source_root`, if given, resolves `source` under that directory instead of DATASETS_DIR.
+    Import flows use it to merge from a staging directory outside the datasets tree.
     """
     invalid_splits = [s for s in splits_to_include if s not in SPLITS]
     if invalid_splits:
         raise AppError(f"Invalid split(s): {invalid_splits}", details={"valid_splits": list(SPLITS)})
     validate_safe_name(prefix, "prefix")
-    src_path = yolo_service.validate_source_dataset(source)
+    if source_root is None:
+        src_path = yolo_service.validate_source_dataset(source)
+    else:
+        # The path is built by this app (a staged export), never from user input, so it does not
+        # go through validate_safe_name the way a user-supplied dataset name does.
+        src_path = (source_root / source).resolve()
+        if not (src_path / "data.yaml").exists():
+            raise AppError(f"No data.yaml under {src_path}")
     yolo_service.ensure_dataset_structure(destination)
     dest_path = yolo_service.dataset_path(destination)
 
