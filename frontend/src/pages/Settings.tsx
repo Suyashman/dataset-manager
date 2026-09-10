@@ -63,6 +63,18 @@ export function Settings() {
               }
             />
           </div>
+          <div className="space-y-2">
+            <Label>SAM3 sidecar URL</Label>
+            <Input
+              value={form.sam3_sidecar_url}
+              onChange={(e) => setForm({ ...form, sam3_sidecar_url: e.target.value })}
+              placeholder="http://127.0.0.1:8800"
+            />
+            <p className="text-xs text-muted-foreground">
+              Where the SAM3 auto-labeler is running. It needs a CUDA GPU, so leave this alone on
+              CPU-only machines — the rest of the app works without it.
+            </p>
+          </div>
           <div className="flex items-center justify-between">
             <Label>Dark mode</Label>
             <Switch
