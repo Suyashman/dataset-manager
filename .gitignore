@@ -20,7 +20,9 @@ logs/*.log
 # Local working copy of the SAM3 auto-labeler. It has its own repository
 # (Suyashman/SAM3-Autolabeler) and is consumed as a separate process, never built or
 # imported by this app — see docs/superpowers/specs/2026-09-10-sam3-integration-design.md
-SAM3/
+# Leading slash anchors this to the repo root: an unanchored "SAM3/" also matches
+# frontend/src/components/sam3/, which is real source and must be committed.
+/SAM3/
 
 # Label backups written by destructive annotation edits, and local screenshots.
 _backup_labels_*/
