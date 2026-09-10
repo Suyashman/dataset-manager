@@ -37,8 +37,11 @@ async def env():
 
 
 @router.get("/browse")
-async def browse(path: str):
-    return _relay(await sam3_proxy_service.forward("GET", "/api/browse", params={"path": path}))
+async def browse(path: str | None = None):
+    # Omitted on first load so the sidecar applies its own default root, which is the only side
+    # that knows what paths exist on the machine it runs on.
+    params = {"path": path} if path else None
+    return _relay(await sam3_proxy_service.forward("GET", "/api/browse", params=params))
 
 
 @router.get("/runs")

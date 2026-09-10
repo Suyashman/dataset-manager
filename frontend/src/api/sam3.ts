@@ -15,7 +15,9 @@ import type {
 const q = encodeURIComponent;
 
 export const getSam3Env = () => api.get<Sam3Env>("/sam3/env");
-export const browseSam3 = (path: string) => api.get<Sam3BrowseResult>(`/sam3/browse?path=${q(path)}`);
+// No path on first load: the sidecar knows which roots exist on the machine it runs on.
+export const browseSam3 = (path?: string) =>
+  api.get<Sam3BrowseResult>(path ? `/sam3/browse?path=${q(path)}` : "/sam3/browse");
 export const listSam3Runs = () => api.get<Sam3RunSummary[]>("/sam3/runs");
 
 export const startSam3Run = (req: {

@@ -1,8 +1,13 @@
+import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Sam3Unreachable, useSam3Env } from "@/components/Sam3Unreachable";
+import { Sam3RunPanel } from "@/components/sam3/Sam3RunPanel";
 
 export function Sam3Studio() {
   const { env, isLoading, unreachable, detail } = useSam3Env();
+  const [tab, setTab] = useState("run");
+  // Lifted here because Review sets the gate and Export reads the same values.
+  const [selectedRun, setSelectedRun] = useState<string | null>(null);
 
   const header = (
     <>
@@ -40,7 +45,7 @@ export function Sam3Studio() {
         </p>
       )}
 
-      <Tabs defaultValue="run">
+      <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="run">Run</TabsTrigger>
           <TabsTrigger value="runs">Runs</TabsTrigger>
@@ -49,10 +54,17 @@ export function Sam3Studio() {
         </TabsList>
 
         <TabsContent value="run" className="space-y-4">
-          <p className="text-sm text-muted-foreground">Run panel — Task 7.</p>
+          <Sam3RunPanel
+            onStarted={(run) => {
+              setSelectedRun(run);
+              setTab("runs");
+            }}
+          />
         </TabsContent>
         <TabsContent value="runs" className="space-y-4">
-          <p className="text-sm text-muted-foreground">Runs panel — Task 8.</p>
+          <p className="text-sm text-muted-foreground">
+            Runs panel — Task 8. {selectedRun ? `Selected: ${selectedRun}` : "No run selected."}
+          </p>
         </TabsContent>
         <TabsContent value="review" className="space-y-4">
           <p className="text-sm text-muted-foreground">Review panel — Task 9.</p>
