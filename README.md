@@ -98,6 +98,37 @@ update it to your own venv location on a new machine.
 - **Datasets / Dataset Statistics** — inspect class balance, validation issues (missing labels,
   duplicates, corrupted images, malformed annotations), and preview images with bounding box
   overlays.
+- **SAM3 Auto-Label** — optional AI-assisted pre-labeling; see below.
+
+## SAM3 Auto-Label (optional)
+
+Name the concepts you want (`helmet`, `goggles`, …), let SAM3 propose labels for a folder of
+images, review them, then import the accepted ones into a dataset as boxes.
+
+**This is entirely optional and off by default.** SAM3 is a separate program with its own venv,
+and it needs a CUDA GPU plus the gated `facebook/sam3` weights from Hugging Face. Dataset Manager
+adds no dependency on it — nothing here downloads weights or imports torch — so the rest of the
+app works exactly the same on a CPU-only laptop, where the SAM3 tab simply reports that SAM3
+isn't running.
+
+To use it:
+
+1. Start the auto-labeler on a machine with a CUDA GPU: `python sam3_server.py`
+   (it lives in its own repository, `Suyashman/SAM3-Autolabeler`).
+2. Put its URL in **Settings → SAM3 sidecar URL** (default `http://127.0.0.1:8800`). It can point
+   at another machine on the LAN.
+3. Open **SAM3 Auto-Label**: pick a folder, name your classes and prompts, run, review, export,
+   then import into a dataset.
+
+Two things worth knowing before you trust the output:
+
+- **These are model predictions, not ground truth.** Review the uncertain band before importing.
+  On a real PPE set it scored ~0.90 F1 on `person` but only ~0.65 on `goggles`.
+- **Prompt wording and image resolution dominate results.** The prompt `goggles` found 0 instances
+  at 640×360 and 251 on higher-resolution frames. Run a 30-image sample first.
+
+SAM3 exports polygons; this app stores boxes. The import converts each polygon to its bounding
+box, so the outline is lost and everything else in the app keeps working unchanged.
 
 ## Numbering
 
