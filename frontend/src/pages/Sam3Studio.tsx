@@ -1,0 +1,66 @@
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Sam3Unreachable, useSam3Env } from "@/components/Sam3Unreachable";
+
+export function Sam3Studio() {
+  const { env, isLoading, unreachable, detail } = useSam3Env();
+
+  const header = (
+    <>
+      <h1 className="text-2xl font-semibold mb-1">SAM3 Auto-Label</h1>
+      <p className="text-muted-foreground mb-2">
+        AI-assisted pre-labeling: name the concepts you want, review what SAM3 found, then import
+        the accepted labels into a dataset. These are model predictions — nothing here should reach
+        a training run unreviewed.
+      </p>
+    </>
+  );
+
+  if (isLoading) return <div className="max-w-3xl">{header}</div>;
+
+  if (unreachable) {
+    return (
+      <div className="max-w-3xl">
+        {header}
+        <div className="mt-4">
+          <Sam3Unreachable detail={detail} />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-5xl">
+      {header}
+      {env?.gpu && (
+        <p className="text-xs text-muted-foreground mb-6">
+          {env.gpu}
+          {env.vram_free_gb != null &&
+            ` · ${env.vram_free_gb} GB VRAM free of ${env.vram_total_gb} GB`}
+          {env.torch && ` · torch ${env.torch}`}
+        </p>
+      )}
+
+      <Tabs defaultValue="run">
+        <TabsList>
+          <TabsTrigger value="run">Run</TabsTrigger>
+          <TabsTrigger value="runs">Runs</TabsTrigger>
+          <TabsTrigger value="review">Review</TabsTrigger>
+          <TabsTrigger value="export">Export</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="run" className="space-y-4">
+          <p className="text-sm text-muted-foreground">Run panel — Task 7.</p>
+        </TabsContent>
+        <TabsContent value="runs" className="space-y-4">
+          <p className="text-sm text-muted-foreground">Runs panel — Task 8.</p>
+        </TabsContent>
+        <TabsContent value="review" className="space-y-4">
+          <p className="text-sm text-muted-foreground">Review panel — Task 9.</p>
+        </TabsContent>
+        <TabsContent value="export" className="space-y-4">
+          <p className="text-sm text-muted-foreground">Export panel — Task 11.</p>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}

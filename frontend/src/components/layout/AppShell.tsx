@@ -11,6 +11,7 @@ import {
   Wand2,
   ScanEye,
   PenTool,
+  Bot,
   Sparkles,
   SprayCan,
   type LucideIcon,
@@ -37,6 +38,7 @@ const navGroups: { heading: string | null; items: NavItem[] }[] = [
     items: [
       { to: "/create", label: "Create Dataset", icon: FolderPlus },
       { to: "/annotate", label: "Annotate", icon: PenTool },
+      { to: "/sam3", label: "SAM3 Auto-Label", icon: Bot },
       { to: "/clean", label: "Clean Dataset", icon: SprayCan },
       { to: "/merge", label: "Merge Dataset", icon: GitMerge },
       { to: "/augment", label: "Augment Dataset", icon: Wand2 },
