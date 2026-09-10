@@ -246,6 +246,11 @@ export function AnnotationWorkspace() {
         // the currently selected box, unlike clicking a class in the sidebar.
         const id = sortedClassIds[Number(e.key) - 1];
         if (id !== undefined) setPendingClassId(id);
+      } else if (/^[a-z]$/i.test(e.key)) {
+        // Classes past the first 9 (which used up digits 1-9) get letters a, b, c... instead.
+        const letterIndex = e.key.toLowerCase().charCodeAt(0) - 97;
+        const id = sortedClassIds[9 + letterIndex];
+        if (id !== undefined) setPendingClassId(id);
       }
     };
     window.addEventListener("keydown", handler);
@@ -366,15 +371,30 @@ export function AnnotationWorkspace() {
             : 'No images yet. Click "Import Images" to bring in a folder from your computer.'}
         </div>
       ) : (
-        <div className="grid grid-cols-[180px_1fr] gap-4 items-start">
-          <div className="space-y-3">
-            <Label className="text-xs">Classes</Label>
-            <div className="space-y-1">
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">Classes</Label>
+              <div className="flex gap-1">
+                <Input
+                  className="h-6 w-28 text-xs"
+                  placeholder="New class"
+                  value={newClassName}
+                  onChange={(e) => setNewClassName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleAddClass()}
+                />
+                <Button size="icon" className="h-6 w-6 shrink-0" onClick={handleAddClass}>
+                  <Plus className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+            <div className="grid gap-1.5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(112px, 1fr))" }}>
               {sortedClassIds.map((id, i) => (
                 <div
                   key={id}
+                  onClick={() => assignClass(id)}
                   className={cn(
-                    "flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-sm border",
+                    "flex items-center gap-1.5 px-2 py-1.5 rounded-md text-sm border cursor-pointer overflow-hidden",
                     pendingClassId === id ? "border-foreground" : "border-transparent hover:bg-accent/50"
                   )}
                 >
@@ -383,35 +403,22 @@ export function AnnotationWorkspace() {
                     value={getClassColor(id)}
                     onClick={(e) => e.stopPropagation()}
                     onChange={(e) => setClassColors((prev) => ({ ...prev, [id]: e.target.value }))}
-                    className="h-4 w-4 shrink-0 rounded-full border-0 bg-transparent p-0 cursor-pointer"
+                    className="h-3.5 w-3.5 shrink-0 rounded-full border-0 bg-transparent p-0 cursor-pointer"
                     title="Change this class's color"
                   />
-                  <button onClick={() => assignClass(id)} className="flex-1 text-left truncate">
-                    <span className="text-muted-foreground text-xs mr-1">{i < 9 ? i + 1 : ""}</span>
-                    {classes[id]}
-                  </button>
+                  <span className="text-muted-foreground text-xs shrink-0">
+                    {i < 9 ? i + 1 : String.fromCharCode(97 + (i - 9))}
+                  </span>
+                  <span className="truncate">{classes[id]}</span>
                 </div>
               ))}
               {sortedClassIds.length === 0 && (
-                <p className="text-xs text-muted-foreground">Add a class below to start labeling.</p>
+                <p className="text-xs text-muted-foreground">Add a class above to start labeling.</p>
               )}
-            </div>
-            <div className="flex gap-1">
-              <Input
-                className="h-7 text-xs"
-                placeholder="New class"
-                value={newClassName}
-                onChange={(e) => setNewClassName(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleAddClass()}
-              />
-              <Button size="icon" className="h-7 w-7 shrink-0" onClick={handleAddClass}>
-                <Plus className="h-3.5 w-3.5" />
-              </Button>
             </div>
           </div>
 
-          <div className="space-y-3">
-            <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center justify-between gap-2">
               <Button variant="outline" size="sm" onClick={() => goTo(currentIndex - 1)} disabled={currentIndex === 0}>
                 <ChevronLeft className="h-4 w-4 mr-1" /> Prev
               </Button>
@@ -512,7 +519,6 @@ export function AnnotationWorkspace() {
               ))}
             </div>
           </div>
-        </div>
       )}
 
       <ImportDialog open={importOpen} onOpenChange={setImportOpen} dataset={name} />
