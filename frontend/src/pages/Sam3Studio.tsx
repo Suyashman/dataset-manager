@@ -2,12 +2,15 @@ import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Sam3Unreachable, useSam3Env } from "@/components/Sam3Unreachable";
 import { Sam3RunPanel } from "@/components/sam3/Sam3RunPanel";
+import { Sam3RunsPanel } from "@/components/sam3/Sam3RunsPanel";
 
 export function Sam3Studio() {
   const { env, isLoading, unreachable, detail } = useSam3Env();
   const [tab, setTab] = useState("run");
   // Lifted here because Review sets the gate and Export reads the same values.
   const [selectedRun, setSelectedRun] = useState<string | null>(null);
+  const [accept, setAccept] = useState("0.6");
+  const [reject, setReject] = useState("0.4");
 
   const header = (
     <>
@@ -62,9 +65,12 @@ export function Sam3Studio() {
           />
         </TabsContent>
         <TabsContent value="runs" className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            Runs panel — Task 8. {selectedRun ? `Selected: ${selectedRun}` : "No run selected."}
-          </p>
+          <Sam3RunsPanel
+            selectedRun={selectedRun}
+            onSelectRun={setSelectedRun}
+            accept={accept}
+            reject={reject}
+          />
         </TabsContent>
         <TabsContent value="review" className="space-y-4">
           <p className="text-sm text-muted-foreground">Review panel — Task 9.</p>
