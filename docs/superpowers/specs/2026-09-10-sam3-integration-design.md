@@ -68,10 +68,12 @@ unmodified** endpoints:
 Implementation rules:
 
 - Uses `httpx`, which is **already** in `requirements.txt`. No new dependency.
-- Connect timeout of 2s; read timeout of 120s (`/api/refine` runs model inference and
+- Connect timeout of 2s; read timeout of 180s (`/api/refine` runs model inference and
   `/api/export` shells out to `sam3_export.py`, both of which are slow but bounded).
-- On `httpx.ConnectError` / `ConnectTimeout`, return HTTP 503 with
-  `{"reachable": false, "detail": "<message>", "sidecar_url": "<url>"}`. Never surface a raw
+- On `httpx.ConnectError` / `ConnectTimeout`, raise `Sam3UnreachableError(AppError)` with
+  `code = "sam3_unreachable"` and `status_code = 503`. This reuses the app's existing error
+  plumbing — `main.py`'s handler renders it as `{"error": {"code", "message", "details"}}` and
+  `client.ts` turns it into an `ApiError` the UI can branch on by code. Never surface a raw
   500 — an absent sidecar is an expected state, not a crash.
 - Non-connection errors from the sidecar are relayed with their original status code and body,
   so the sidecar's own `HTTPException` messages stay visible to the user.
