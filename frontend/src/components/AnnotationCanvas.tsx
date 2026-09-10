@@ -140,10 +140,20 @@ export function AnnotationCanvas({
     return null;
   };
 
+  // A few px of slack around the box body, not just its exact rect — small PPE boxes (eyewear,
+  // gloves) are only a handful of pixels wide on screen and a pixel-perfect rect is an easy miss.
+  const BOX_HIT_TOLERANCE = 4;
+
   const hitTestBox = (mx: number, my: number): EditableBox | null => {
     for (let i = boxes.length - 1; i >= 0; i--) {
       const p = toPixel(boxes[i]);
-      if (mx >= p.x && mx <= p.x + p.width && my >= p.y && my <= p.y + p.height) return boxes[i];
+      if (
+        mx >= p.x - BOX_HIT_TOLERANCE &&
+        mx <= p.x + p.width + BOX_HIT_TOLERANCE &&
+        my >= p.y - BOX_HIT_TOLERANCE &&
+        my <= p.y + p.height + BOX_HIT_TOLERANCE
+      )
+        return boxes[i];
     }
     return null;
   };
