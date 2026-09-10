@@ -4,6 +4,7 @@ import { Sam3Unreachable, useSam3Env } from "@/components/Sam3Unreachable";
 import { Sam3RunPanel } from "@/components/sam3/Sam3RunPanel";
 import { Sam3RunsPanel } from "@/components/sam3/Sam3RunsPanel";
 import { Sam3ReviewPanel } from "@/components/sam3/Sam3ReviewPanel";
+import { Sam3ExportPanel } from "@/components/sam3/Sam3ExportPanel";
 
 export function Sam3Studio() {
   const { env, isLoading, unreachable, detail } = useSam3Env();
@@ -89,7 +90,11 @@ export function Sam3Studio() {
           )}
         </TabsContent>
         <TabsContent value="export" className="space-y-4">
-          <p className="text-sm text-muted-foreground">Export panel — Task 11.</p>
+          {selectedRun ? (
+            <Sam3ExportPanel run={selectedRun} accept={accept} reject={reject} />
+          ) : (
+            <p className="text-sm text-muted-foreground">Pick a run on the Runs tab first.</p>
+          )}
         </TabsContent>
       </Tabs>
     </div>
