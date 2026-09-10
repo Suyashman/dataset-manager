@@ -5,6 +5,8 @@ import { Check, Undo2, X } from "lucide-react";
 import { ApiError } from "@/api/client";
 import { getSam3Instances, getSam3Review, postSam3Decision, sam3ImageUrl } from "@/api/sam3";
 import { Sam3ReviewCanvas } from "@/components/sam3/Sam3ReviewCanvas";
+import { Sam3GatePanel } from "@/components/sam3/Sam3GatePanel";
+import { Sam3RefinePanel } from "@/components/sam3/Sam3RefinePanel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,18 +18,17 @@ export function Sam3ReviewPanel({
   run,
   accept,
   reject,
-  onExemplarBox,
-  exemplarSlot,
+  onGateChange,
 }: {
   run: string;
   accept: string;
   reject: string;
-  onExemplarBox?: (box: [number, number, number, number]) => void;
-  exemplarSlot?: React.ReactNode;
+  onGateChange: (accept: string, reject: string) => void;
 }) {
   const queryClient = useQueryClient();
   const [file, setFile] = useState<string | null>(null);
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
+  const [exemplarBox, setExemplarBox] = useState<[number, number, number, number] | null>(null);
 
   const { data: queue } = useQuery({
     queryKey: ["sam3-review", run, accept, reject],
@@ -113,16 +114,21 @@ export function Sam3ReviewPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [instances, selectedIdx, classes, activeFile, items]);
 
+  // An empty queue still renders the gate panel. Raising the accept gate is what empties the
+  // queue, so hiding the controls here would strand the user with no way to lower it again.
   if (!items.length) {
     return (
-      <Card>
-        <CardContent className="pt-6">
-          <p className="text-sm text-muted-foreground">
-            Nothing is waiting for review at these thresholds. Everything scored either clearly
-            above the accept gate or clearly below the reject gate.
-          </p>
-        </CardContent>
-      </Card>
+      <div className="space-y-4">
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground">
+              Nothing is waiting for review at these thresholds. Everything scored either clearly
+              above the accept gate or clearly below the reject gate.
+            </p>
+          </CardContent>
+        </Card>
+        <Sam3GatePanel run={run} accept={accept} reject={reject} onGateChange={onGateChange} />
+      </div>
     );
   }
 
@@ -163,7 +169,7 @@ export function Sam3ReviewPanel({
             decisions={detail?.decisions ?? {}}
             selectedIdx={selectedIdx}
             onSelect={setSelectedIdx}
-            onExemplarBox={onExemplarBox}
+            onExemplarBox={setExemplarBox}
           />
         )}
 
@@ -246,9 +252,19 @@ export function Sam3ReviewPanel({
               })}
             </div>
 
-            {exemplarSlot}
+            {activeFile && (
+              <Sam3RefinePanel
+                run={run}
+                file={activeFile}
+                classes={classes}
+                exemplarBox={exemplarBox}
+                runIsActive={false}
+              />
+            )}
           </CardContent>
         </Card>
+
+        <Sam3GatePanel run={run} accept={accept} reject={reject} onGateChange={onGateChange} />
       </div>
     </div>
   );

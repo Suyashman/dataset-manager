@@ -75,7 +75,15 @@ export function Sam3Studio() {
         </TabsContent>
         <TabsContent value="review" className="space-y-4">
           {selectedRun ? (
-            <Sam3ReviewPanel run={selectedRun} accept={accept} reject={reject} />
+            <Sam3ReviewPanel
+              run={selectedRun}
+              accept={accept}
+              reject={reject}
+              onGateChange={(a, r) => {
+                setAccept(a);
+                setReject(r);
+              }}
+            />
           ) : (
             <p className="text-sm text-muted-foreground">Pick a run on the Runs tab first.</p>
           )}
