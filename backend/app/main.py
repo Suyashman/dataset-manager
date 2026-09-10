@@ -44,7 +44,7 @@ async def health():
     return {"status": "ok"}
 
 
-from app.api import datasets, images, stats, validation, search, settings as settings_api, logs, jobs, training, augmentation, inference, annotation  # noqa: E402
+from app.api import datasets, images, stats, validation, search, settings as settings_api, logs, jobs, training, augmentation, inference, annotation, sam3  # noqa: E402
 
 app.include_router(datasets.router, prefix="/api/datasets", tags=["datasets"])
 app.include_router(images.router, prefix="/api/datasets", tags=["images"])
@@ -58,3 +58,4 @@ app.include_router(training.router, prefix="/api/training", tags=["training"])
 app.include_router(augmentation.router, prefix="/api/augmentation", tags=["augmentation"])
 app.include_router(inference.router, prefix="/api/inference", tags=["inference"])
 app.include_router(annotation.router, prefix="/api/annotation", tags=["annotation"])
+app.include_router(sam3.router, prefix="/api/sam3", tags=["sam3"])

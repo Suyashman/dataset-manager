@@ -31,3 +31,8 @@ class PathTraversalError(AppError):
 class JobNotFoundError(AppError):
     code = "job_not_found"
     status_code = 404
+
+
+class Sam3UnreachableError(AppError):
+    code = "sam3_unreachable"
+    status_code = 503
