@@ -35,10 +35,14 @@ def seg_line_to_box_line(line: str) -> str | None:
         x1, x2, y1, y2 = min(xs), max(xs), min(ys), max(ys)
         cx, cy, w, h = (x1 + x2) / 2, (y1 + y2) / 2, x2 - x1, y2 - y1
 
-    w, h = _clamp(w), _clamp(h)
-    if w <= 0 or h <= 0:
+    # Validate what will actually be WRITTEN, not the raw float. A polygon thinner than 1e-6
+    # normalized (~0.002 px on a 1920-wide frame) passes a `w > 0` test and then rounds to
+    # 0.000000 at six decimals, producing a zero-area box that every consumer has to special-case.
+    cx, cy, w, h = _clamp(cx), _clamp(cy), _clamp(w), _clamp(h)
+    out_w, out_h = f"{w:.6f}", f"{h:.6f}"
+    if float(out_w) <= 0 or float(out_h) <= 0:
         return None
-    return f"{cls} {_clamp(cx):.6f} {_clamp(cy):.6f} {w:.6f} {h:.6f}"
+    return f"{cls} {_clamp(cx):.6f} {_clamp(cy):.6f} {out_w} {out_h}"
 
 
 def convert_label_file(src: Path, dst: Path) -> tuple[int, int]:

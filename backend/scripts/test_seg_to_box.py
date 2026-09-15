@@ -44,6 +44,14 @@ print("ok  unparseable lines rejected")
 assert seg_line_to_box_line("0 0.5 0.5 0.5 0.5 0.5 0.5") is None
 print("ok  zero-area polygon rejected")
 
+# --- and so is one that only becomes zero-area once written at 6dp ----------
+# Found in the wild: a sliver 1e-9 wide passes a raw `w > 0` test, then formats to 0.000000.
+sliver = seg_line_to_box_line("1 0.652687 0.459207 0.652687001 0.459207 0.652687 0.459207001")
+assert sliver is None, sliver
+# A box that survives rounding is still kept.
+assert seg_line_to_box_line("1 0.10 0.10 0.101 0.10 0.101 0.101") is not None
+print("ok  sub-rounding sliver rejected, genuinely small box kept")
+
 # --- file conversion, including the empty-file rule -------------------------
 with tempfile.TemporaryDirectory() as td:
     td = Path(td)
