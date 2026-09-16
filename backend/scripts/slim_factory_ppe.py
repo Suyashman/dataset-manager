@@ -37,8 +37,8 @@ from app.config import DATASETS_DIR
 from app.services import metadata_service
 from app.utils.yaml_io import save_data_yaml
 
-SOURCE_NAME = "FACTORY_PPE_YOLO"
-DEST_NAME = "FACTORY_PPE_SLIM"
+SOURCE_NAME = "FACTORY_PPE_2_YOLO"
+DEST_NAME = "FACTORY_PPE_3_SLIM"
 CLASSES = {0: "person", 1: "hardhat"}
 
 # Coarse enough that a stratum holds several frames, fine enough to separate daylight from night.

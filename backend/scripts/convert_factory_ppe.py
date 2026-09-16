@@ -43,8 +43,8 @@ from app.services import metadata_service
 from app.utils.seg_to_box import seg_line_to_box_line
 from app.utils.yaml_io import save_data_yaml
 
-SOURCE = DATASETS_DIR / "FACTORY_PPE_DATASET" / "FACTORY_PPE_DATASET"
-DEST_NAME = "FACTORY_PPE_YOLO"
+SOURCE = DATASETS_DIR / "FACTORY_PPE_1_DATASET" / "FACTORY_PPE_DATASET"
+DEST_NAME = "FACTORY_PPE_2_YOLO"
 
 # old class id -> (new class id, new name). Anything absent is dropped.
 KEEP = {0: (0, "person"), 1: (1, "hardhat")}
