@@ -53,18 +53,25 @@ SLIM = DATASETS_DIR / "FACTORY_PPE_3_SLIM"
 PUBLIC = DATASETS_DIR / "ppe_all_combined"
 DEST_NAME = "FACTORY_PPE_4_INHOUSE_PUBLIC"
 
-# SLIM's classes, locked. If SLIM's own data.yaml ever stops matching this exactly, the script
-# stops instead of guessing -- this is the guard that was missing the first time.
+# SLIM's classes, locked as a fact about SLIM -- this is what the runtime guard below checks
+# SLIM's live data.yaml against, unrelated to what this dataset chooses to keep of it.
 SLIM_LOCKED_CLASSES = {0: "person", 1: "hardhat", 2: "goggles", 3: "welding shield"}
-CLASSES = {**SLIM_LOCKED_CLASSES, 4: "safety_vest"}
 
-# ppe_all_combined's own ids -> target id: person->0, safety_helmet->1, welding_shield->3 (SLIM's
-# own welding-shield id), safety_vest->4 (the one new class).
-PUBLIC_KEEP = {0: 0, 1: 1, 2: 3, 4: 4}
-# welding_shield(2) is only trusted from the 'weld' prefix -- the 23 images deliberately annotated
-# for this class. The rest of ppe_all_combined's welding_shield boxes are incidental hits in an
-# otherwise uncurated pool; only the class-2 LINE is dropped for those images, not the whole image.
-WELDING_SHIELD_TRUSTED_PREFIX = "weld"
+# This dataset's own output vocabulary. goggles is deliberately dropped here: 32 instances, all in
+# train, zero in valid/test -- not enough to learn from and no way to even measure it. Dropping a
+# non-terminal class means everything after it renumbers, so SLIM's own id 3 (welding shield)
+# becomes output id 2 -- see SLIM_TO_OUTPUT below, which is what makes that renumbering explicit
+# rather than assumed.
+CLASSES = {0: "person", 1: "hardhat", 2: "welding shield", 3: "safety_vest"}
+
+# SLIM's own id -> output id. id 2 (goggles) has no entry and is dropped as a line; this is the
+# one exception to "SLIM's classes pass through untouched" and exists only because goggles is
+# being retired from this dataset specifically, not because SLIM's own data is wrong.
+SLIM_TO_OUTPUT = {0: 0, 1: 1, 3: 2}
+
+# ppe_all_combined's own ids -> target id: person->0, safety_helmet->1, welding_shield->2 (SLIM's
+# own welding-shield id), safety_vest->3 (the one new class).
+PUBLIC_KEEP = {0: 0, 1: 1, 2: 2, 4: 3}
 # Presence of this anywhere in the image drops the whole image -- eyewear only. glove(5)/mask(6)
 # used to be in here too; that discarded 22 of 23 deliberately-annotated welding photos, since a
 # welder wearing a welding shield always also wears gloves. They are line-drops now, like the rest.
@@ -81,11 +88,13 @@ def link_or_copy(src: Path, dst: Path) -> None:
         shutil.copy2(src, dst)
 
 
-def copy_slim(dest: Path, dry_run: bool) -> tuple[dict, dict]:
-    """Locked passthrough: SLIM's images and labels, byte-for-byte, nothing remapped.
+def copy_slim(dest: Path, dry_run: bool) -> tuple[dict, dict, int]:
+    """SLIM's images, all kept; labels filtered+renumbered through SLIM_TO_OUTPUT.
 
     Refuses to run if SLIM's own data.yaml no longer matches SLIM_LOCKED_CLASSES exactly -- that
-    mismatch is exactly what silently corrupted this dataset once already.
+    mismatch is exactly what silently corrupted this dataset once already. The renumbering here is
+    a deliberate, separate step (dropping goggles for this dataset only), not evidence that SLIM's
+    own data has drifted again.
     """
     live = load_data_yaml(SLIM / "data.yaml")["classes"]
     if live != SLIM_LOCKED_CLASSES:
@@ -93,12 +102,14 @@ def copy_slim(dest: Path, dry_run: bool) -> tuple[dict, dict]:
             f"SLIM's classes have changed since this script was locked to them.\n"
             f"  locked (expected): {SLIM_LOCKED_CLASSES}\n"
             f"  found just now   : {live}\n"
-            f"Update SLIM_LOCKED_CLASSES (and PUBLIC_KEEP's target ids) to match before re-running -- "
-            f"do not proceed on a guess, that is exactly how this dataset got corrupted before."
+            f"Update SLIM_LOCKED_CLASSES (and SLIM_TO_OUTPUT/PUBLIC_KEEP's target ids) to match "
+            f"before re-running -- do not proceed on a guess, that is exactly how this dataset "
+            f"got corrupted before."
         )
 
     counts = {"train": 0, "valid": 0, "test": 0}
-    per_class = {cid: 0 for cid in CLASSES}  # includes ids SLIM doesn't have (e.g. 4=safety_vest)
+    per_class = {cid: 0 for cid in CLASSES}
+    dropped_goggles = 0
     for split in ("train", "valid", "test"):
         img_dir, lbl_dir = SLIM / split / "images", SLIM / split / "labels"
         if not img_dir.exists():
@@ -108,14 +119,24 @@ def copy_slim(dest: Path, dry_run: bool) -> tuple[dict, dict]:
             (dest / split / "labels").mkdir(parents=True, exist_ok=True)
         for img in img_dir.iterdir():
             lbl = lbl_dir / f"{img.stem}.txt"
+            out_lines = []
             for l in (lbl.read_text(encoding="utf-8").splitlines() if lbl.exists() else []):
-                if l.strip():
-                    per_class[int(l.split()[0])] += 1
+                if not l.strip():
+                    continue
+                t = l.split()
+                old_cls = int(t[0])
+                if old_cls not in SLIM_TO_OUTPUT:
+                    dropped_goggles += 1
+                    continue
+                new_cls = SLIM_TO_OUTPUT[old_cls]
+                out_lines.append(f"{new_cls} {' '.join(t[1:])}")
+                per_class[new_cls] += 1
             if not dry_run:
                 link_or_copy(img, dest / split / "images" / img.name)
-                link_or_copy(lbl, dest / split / "labels" / f"{img.stem}.txt")
+                (dest / split / "labels" / f"{img.stem}.txt").write_text(
+                    "\n".join(out_lines) + ("\n" if out_lines else ""), encoding="utf-8")
             counts[split] += 1
-    return counts, per_class
+    return counts, per_class, dropped_goggles
 
 
 def filter_public(dest: Path, dry_run: bool) -> tuple[dict, dict, int]:
@@ -196,7 +217,7 @@ def main() -> None:
         sys.exit(f"source not found: {PUBLIC}")
 
     dest = DATASETS_DIR / DEST_NAME
-    slim_counts, slim_per_class = copy_slim(dest, args.dry_run)
+    slim_counts, slim_per_class, slim_dropped_goggles = copy_slim(dest, args.dry_run)
     pub_counts, pub_per_class, dropped_excl, dropped_irrel, dropped_degen = filter_public(dest, args.dry_run)
 
     slim_named = {CLASSES[k]: v for k, v in slim_per_class.items()}
@@ -205,8 +226,9 @@ def main() -> None:
     combined_named = {CLASSES[k]: v for k, v in combined_per_class.items()}
 
     total = {s: slim_counts[s] + pub_counts[s] for s in ("train", "valid", "test")}
-    print(f"FACTORY_PPE_3_SLIM contributed : {slim_counts}  (locked passthrough)")
-    print(f"  instances (as-is)            : {slim_named}")
+    print(f"FACTORY_PPE_3_SLIM contributed : {slim_counts}")
+    print(f"  instances (renumbered)       : {slim_named}")
+    print(f"  goggles lines dropped        : {slim_dropped_goggles}  (retired from this dataset)")
     print(f"ppe_all_combined contributed   : {pub_counts}")
     print(f"  instances (name-matched)     : {pub_named}")
     print(f"  dropped (eyewear/glove/mask) : {dropped_excl}")
@@ -226,6 +248,7 @@ def main() -> None:
         DEST_NAME, CLASSES,
         {"sources": ["FACTORY_PPE_3_SLIM", "ppe_all_combined"],
          "slim_classes_locked": SLIM_LOCKED_CLASSES,
+         "slim_to_output_mapping": {str(k): v for k, v in SLIM_TO_OUTPUT.items()},
          "ppe_all_combined_original_mapping": {str(k): v for k, v in public_classes.items()},
          "ppe_all_combined_classes_kept": {str(k): v for k, v in PUBLIC_KEEP.items()},
          "ppe_all_combined_classes_excluded_whole_image": sorted(PUBLIC_EXCLUDE_IMAGE)})
@@ -235,6 +258,7 @@ def main() -> None:
         "slim_source": "FACTORY_PPE_3_SLIM",
         "slim_images": slim_counts,
         "slim_instances_contributed": slim_named,
+        "slim_goggles_lines_dropped": slim_dropped_goggles,
         "public_source": "ppe_all_combined",
         "public_images_kept": pub_counts,
         "public_images_dropped_eyewear_glove_mask": dropped_excl,
@@ -242,12 +266,12 @@ def main() -> None:
         "public_lines_dropped_degenerate": dropped_degen,
         "public_instances_contributed": pub_named,
         "classes": {str(k): v for k, v in CLASSES.items()},
-        "note": "SLIM's own classes are LOCKED: copied through unchanged, byte-for-byte. "
+        "note": "goggles retired from this dataset (32 instances, all train, zero valid/test -- "
+                "not trainable and not measurable) per explicit analysis+decision on 2026-09-16. "
+                "SLIM's id 3 (welding shield) renumbers to output id 2 as a result; SLIM's own "
+                "data is untouched, this renumbering exists only in this dataset's copy. "
                 "eyewear/glove/mask exclusion from ppe_all_combined is whole-image; "
-                "no_eyewear/no_glove/boots/no_boots lines dropped but did not block the image. "
-                "REBUILD 2026-09-16: an earlier version of this script hardlinked SLIM's labels "
-                "through unchanged, which mislabeled SLIM's goggles/welding-shield lines (added "
-                "to SLIM after the first build) as this dataset's welding_shield/safety_vest.",
+                "no_eyewear/no_glove/boots/no_boots lines dropped but did not block the image.",
     })
     from app.services import dataset_service
     dataset_service.refresh_cached_summary(DEST_NAME)
