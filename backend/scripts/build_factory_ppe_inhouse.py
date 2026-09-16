@@ -24,10 +24,11 @@ already have, mapped by concept onto SLIM's locked vocabulary, plus one genuinel
     reflective   -> safety_vest   (new id 4 -- SLIM has no vest class at all)
     everything else                    -- dropped as a LABEL LINE, never as a whole image
 
-master's own 'welding_helmet' is deliberately NOT merged into SLIM's 'welding shield': FINDINGS.md
-already flagged that concept as unreliable on this factory's own cameras ('conflated with cloth
-face coverings'), unlike SLIM's welding-shield annotations, which are this project's own trusted
-in-house labels for the same PPE item.
+master's own 'welding_helmet' is NOT merged into SLIM's 'welding shield' for the general
+population: FINDINGS.md already flagged that concept as unreliable on this factory's own cameras
+('conflated with cloth face coverings'). The one exception is the 'weld' filename prefix -- 23
+images deliberately annotated for welding content -- where welding_helmet IS mapped in, since
+that specific concern doesn't apply to a hand-curated batch.
 
 Unlike FACTORY_PPE_4_COMBINED's filter (which drops a whole image on an unwanted class), no
 image is ever excluded here. An image whose only original labels fall in the dropped set keeps
@@ -129,6 +130,14 @@ def remap_master(dest: Path, dry_run: bool) -> tuple[dict, dict, int, int]:
             lines = [l for l in lbl.read_text(encoding="utf-8", errors="ignore").splitlines() if l.strip()] \
                 if lbl.exists() else []
 
+            # welding_helmet(9) is trusted only for the 'weld' prefix -- the 23 images
+            # deliberately annotated for welding content. FINDINGS.md flagged this class as
+            # unreliable across the general factory_ppe_master population ('conflated with
+            # cloth face coverings'), which doesn't apply to this specific curated batch.
+            class_map = MASTER_MAP
+            if img.stem.startswith("weld"):
+                class_map = {**MASTER_MAP, 9: 3}  # welding_helmet -> welding shield (SLIM's id 3)
+
             out_lines = []
             for raw in lines:
                 t = raw.split()
@@ -136,13 +145,13 @@ def remap_master(dest: Path, dry_run: bool) -> tuple[dict, dict, int, int]:
                     old_cls = int(float(t[0]))
                 except (ValueError, IndexError):
                     continue
-                if old_cls not in MASTER_MAP:
+                if old_cls not in class_map:
                     continue  # not in the target vocabulary -- drop the line, keep the image
                 fixed = seg_line_to_box_line(f"{old_cls} {' '.join(t[1:])}")
                 if fixed is None:
                     degenerate += 1
                     continue
-                new_cls = MASTER_MAP[old_cls]
+                new_cls = class_map[old_cls]
                 out_lines.append(f"{new_cls} {fixed.split(' ', 1)[1]}")
                 per_class[new_cls] += 1
 

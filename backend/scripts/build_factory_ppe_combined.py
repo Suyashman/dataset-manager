@@ -21,14 +21,17 @@ genuinely new class appended for what SLIM has no equivalent of:
     welding_shield -> welding shield  (SLIM's id 3)   -- exact concept match
     safety_vest    -> safety_vest     (new id 4)       -- SLIM has no vest class at all
 
-- An image is DROPPED ENTIRELY if it has ANY instance of eyewear, glove, or mask -- not just
-  those label lines, the whole image. This is about ppe_all_combined's OWN eyewear class
-  specifically, which spans too many physical types to be trustworthy (unlike SLIM's own
-  'goggles', which is locked and kept regardless) -- and a partly-excluded image would still
-  teach the model to expect eyewear/gloves/masks it is never asked to detect.
-- no_eyewear / no_glove / boots / no_boots do not trigger exclusion -- they are absence labels or
-  an unrequested class, not the thing being excluded -- but their label LINES are dropped from any
-  image that does survive, since they are not part of the target vocabulary.
+- An image is DROPPED ENTIRELY if it has ANY instance of eyewear -- not just that label line, the
+  whole image. This is specifically about ppe_all_combined's OWN eyewear class, which spans too
+  many physical types to be trustworthy (unlike SLIM's own 'goggles', which is locked and kept
+  regardless) -- a partly-excluded image would still teach the model to expect eyewear it is
+  never asked to detect.
+- glove / mask / no_eyewear / no_glove / boots / no_boots do NOT trigger exclusion; their label
+  LINES are dropped from any image (they are not part of the target vocabulary) but the image and
+  its other content -- crucially, person/welding_shield on welding photos, which always co-occur
+  with gloves in real welding -- survive. glove/mask were whole-image-excluded in an earlier
+  version of this script; that silently discarded 22 of 23 deliberately-annotated welding photos,
+  since a welder wearing a welding shield is, physically, always also wearing gloves.
 
 Each source's own split assignment (train/valid/test) is kept as-is. Re-splitting either source
 would risk leaking near-duplicate frames across train/valid, which is exactly what both sources
@@ -58,10 +61,15 @@ CLASSES = {**SLIM_LOCKED_CLASSES, 4: "safety_vest"}
 # ppe_all_combined's own ids -> target id: person->0, safety_helmet->1, welding_shield->3 (SLIM's
 # own welding-shield id), safety_vest->4 (the one new class).
 PUBLIC_KEEP = {0: 0, 1: 1, 2: 3, 4: 4}
-# Presence of ANY of these anywhere in the image drops the whole image.
-PUBLIC_EXCLUDE_IMAGE = {3, 5, 6}  # eyewear, glove, mask
-# Everything else (no_eyewear=7, no_glove=8, boots=9, no_boots=10) is dropped as a line only.
-SLIM_NAME_TO_TARGET = {"person": 0, "hardhat": 1, "welding_shield": 2}
+# welding_shield(2) is only trusted from the 'weld' prefix -- the 23 images deliberately annotated
+# for this class. The rest of ppe_all_combined's welding_shield boxes are incidental hits in an
+# otherwise uncurated pool; only the class-2 LINE is dropped for those images, not the whole image.
+WELDING_SHIELD_TRUSTED_PREFIX = "weld"
+# Presence of this anywhere in the image drops the whole image -- eyewear only. glove(5)/mask(6)
+# used to be in here too; that discarded 22 of 23 deliberately-annotated welding photos, since a
+# welder wearing a welding shield always also wears gloves. They are line-drops now, like the rest.
+PUBLIC_EXCLUDE_IMAGE = {3}  # eyewear
+# Everything else (glove=5, mask=6, no_eyewear=7, no_glove=8, boots=9, no_boots=10) is a line-only drop.
 
 
 def link_or_copy(src: Path, dst: Path) -> None:
