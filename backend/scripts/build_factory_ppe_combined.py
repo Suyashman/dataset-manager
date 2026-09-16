@@ -140,17 +140,24 @@ def copy_slim(dest: Path, dry_run: bool) -> tuple[dict, dict, int]:
 
 
 def filter_public(dest: Path, dry_run: bool) -> tuple[dict, dict, int]:
+    # This dataset has no use for a test split: training here only ever reads train/val from
+    # data.yaml (Ultralytics' own train() loop never touches a 'test' key), and nothing else in
+    # this app evaluates against one either. So ppe_all_combined's test-split images are folded
+    # into train rather than held back for a check that never happens.
+    DEST_SPLIT = {"train": "train", "valid": "valid", "test": "train"}
+
     counts = {"train": 0, "valid": 0, "test": 0}
     dropped_excluded = dropped_irrelevant = dropped_degenerate = 0
     per_class = {v: 0 for v in CLASSES}
 
     for split in ("train", "valid", "test"):
         img_dir, lbl_dir = PUBLIC / split / "images", PUBLIC / split / "labels"
+        dest_split = DEST_SPLIT[split]
         if not img_dir.exists():
             continue
         if not dry_run:
-            (dest / split / "images").mkdir(parents=True, exist_ok=True)
-            (dest / split / "labels").mkdir(parents=True, exist_ok=True)
+            (dest / dest_split / "images").mkdir(parents=True, exist_ok=True)
+            (dest / dest_split / "labels").mkdir(parents=True, exist_ok=True)
 
         for lbl in lbl_dir.iterdir():
             lines = [l for l in lbl.read_text(encoding="utf-8", errors="ignore").splitlines() if l.strip()]
@@ -198,10 +205,10 @@ def filter_public(dest: Path, dry_run: bool) -> tuple[dict, dict, int]:
             if img is None:
                 continue
             if not dry_run:
-                link_or_copy(img, dest / split / "images" / img.name)
-                (dest / split / "labels" / f"{stem}.txt").write_text(
+                link_or_copy(img, dest / dest_split / "images" / img.name)
+                (dest / dest_split / "labels" / f"{stem}.txt").write_text(
                     "\n".join(out_lines) + "\n", encoding="utf-8")
-            counts[split] += 1
+            counts[dest_split] += 1
 
     return counts, per_class, dropped_excluded, dropped_irrelevant, dropped_degenerate
 
@@ -217,6 +224,11 @@ def main() -> None:
         sys.exit(f"source not found: {PUBLIC}")
 
     dest = DATASETS_DIR / DEST_NAME
+    if not args.dry_run:
+        # Kept empty, not omitted: this app's own dataset validation expects all three split
+        # folders to exist, and an empty one is read as zero images rather than erroring.
+        (dest / "test" / "images").mkdir(parents=True, exist_ok=True)
+        (dest / "test" / "labels").mkdir(parents=True, exist_ok=True)
     slim_counts, slim_per_class, slim_dropped_goggles = copy_slim(dest, args.dry_run)
     pub_counts, pub_per_class, dropped_excl, dropped_irrel, dropped_degen = filter_public(dest, args.dry_run)
 
