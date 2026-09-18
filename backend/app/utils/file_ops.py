@@ -1,4 +1,5 @@
 import hashlib
+import os
 import re
 import shutil
 from pathlib import Path
@@ -47,9 +48,41 @@ def iter_image_files(directory: Path) -> Iterator[Path]:
     if cached is not None and cached[0] == mtime:
         yield from cached[1]
         return
-    files = [p for p in sorted(directory.iterdir()) if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS]
+    # os.scandir(), not Path.iterdir()+Path.is_file(): on Windows, Path.is_file() does a fresh
+    # per-entry stat() against the individual file's full path and silently returns False (it
+    # swallows OSError rather than raising) once that path exceeds the 260-char MAX_PATH -- which
+    # a dataset with long source filenames (seen in practice: Roboflow's own '<name>_jpg.rf.<hash>'
+    # scheme, and worse, base64-looking names over 300 chars from some re-hosted sources) hits for
+    # real files. scandir's DirEntry.is_file() answers from the directory-enumeration handle
+    # itself, never touching the individual path, so it doesn't have this failure mode. Silently
+    # dropping files here isn't cosmetic: it means Annotate/Clean Dataset pagination and every
+    # count derived from this function skip real images without any error surfacing.
+    with os.scandir(directory) as it:
+        # Sort by a bare-name Path, not the raw string: pathlib's comparison is case-insensitive
+        # on Windows (matching NTFS), which a plain e.name string sort is not -- this keeps the
+        # exact ordering sorted(directory.iterdir()) produced, so pagination order doesn't shift
+        # as a side effect of the long-path fix.
+        entries = sorted(it, key=lambda e: Path(e.name))
+    files = [directory / e.name for e in entries
+             if e.is_file() and Path(e.name).suffix.lower() in IMAGE_EXTENSIONS]
     _image_listing_cache[directory] = (mtime, files)
     yield from files
+
+
+def file_size(path: Path) -> int:
+    """path.stat().st_size, but safe for paths beyond Windows' 260-char MAX_PATH.
+
+    iter_image_files() now correctly yields long-path files instead of silently hiding them (see
+    above) -- which means any caller still doing plain path.stat() on its results will raise
+    FileNotFoundError on exactly those files instead of just under-counting them. Use this instead
+    wherever a size is needed for a path that came from iter_image_files() or a raw directory
+    listing, so fixing the listing bug doesn't turn a silent undercount into a crash.
+    """
+    s = str(path.resolve())
+    if not s.startswith("\\\\?\\"):
+        s = "\\\\?\\" + s
+    import os as _os
+    return _os.stat(s).st_size
 
 
 def copy_file_safe(src: Path, dst: Path) -> None:
@@ -66,10 +99,17 @@ def compute_file_hash(path: Path) -> str:
 
 
 def get_dir_size(directory: Path) -> int:
+    # os.scandir(), same reasoning as iter_image_files: Path.rglob()+Path.is_file()/.stat() do a
+    # fresh per-entry stat against the full path and silently skip (is_file() swallows the error)
+    # or raise (stat()) once a path exceeds 260 chars. DirEntry.is_file()/.stat() answer from the
+    # scandir handle itself and don't have that failure mode.
     total = 0
     if not directory.exists():
         return 0
-    for p in directory.rglob("*"):
-        if p.is_file():
-            total += p.stat().st_size
+    with os.scandir(directory) as it:
+        for entry in it:
+            if entry.is_dir(follow_symlinks=False):
+                total += get_dir_size(Path(entry.path))
+            elif entry.is_file():
+                total += entry.stat().st_size
     return total

@@ -5,7 +5,7 @@ from app.config import DATASETS_DIR, SPLITS
 from app.services import merge_service, metadata_service, yolo_service
 from app.services.logging_service import log_event
 from app.utils.errors import AppError, DatasetNotFoundError, DuplicateDatasetNameError
-from app.utils.file_ops import iter_image_files
+from app.utils.file_ops import file_size, get_dir_size, iter_image_files
 
 
 def create_dataset(
@@ -49,11 +49,9 @@ def _compute_summary_from_disk(name: str) -> dict:
         count = 0
         for img in iter_image_files(images_dir):
             count += 1
-            size_bytes += img.stat().st_size
+            size_bytes += file_size(img)
         if labels_dir.exists():
-            for lbl in labels_dir.iterdir():
-                if lbl.is_file():
-                    size_bytes += lbl.stat().st_size
+            size_bytes += get_dir_size(labels_dir)
         splits[split] = count
     classes = yolo_service.get_classes(name)
     return {
